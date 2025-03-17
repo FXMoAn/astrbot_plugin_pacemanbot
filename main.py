@@ -3,7 +3,7 @@ import httpx
 import json
 import os
 import pytz
-from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
+from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult,MessageChain
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger
 from astrbot.core.message.components import At, Plain
@@ -22,7 +22,7 @@ class PaceManPlugin(Star):
         self.message_target = None
         self.hour = 8
         self.minute = 0
-        asyncio.create_task(self.send_scheduled_paceman_leaderboard())
+        
 
     # 提示用法
     @filter.command("bothelp")
@@ -30,6 +30,7 @@ class PaceManPlugin(Star):
         chain = [
                     Plain("可使用的指令有\n"),
                     Plain("/paceman 用户名-查询某玩家的24小时数据\n"),
+                    Plain("/showldb-展示排行榜\n"),
                     Plain("/ldb 参数:\n"),
                     Plain("   nether-地狱数量榜\n"),
                     Plain("   finishcount-完成数量榜\n"),
@@ -112,7 +113,8 @@ class PaceManPlugin(Star):
                 yield event.chain_result(chain)
             case "finishtime":
                 chain = []
-                sorted_by_finish_time = sorted(player_list, key=lambda x: x['gg_avg'], reverse=True)
+                sorted_by_finish_time = sorted(player_list, key=lambda x: x['gg_avg'])
+                sorted_by_finish_time = [time for time in sorted_by_finish_time if time != "0:00"]
                 for i, user_data in enumerate(sorted_by_finish_time[:10], start=1):
                     chain.append(Plain(f"{i}. {user_data['username']}: 平均时间{user_data['gg_avg']}\n"))
                 yield event.chain_result(chain)
@@ -152,20 +154,24 @@ class PaceManPlugin(Star):
 
 
     #定时返回PaceMan榜单
-    @filter.command("run")
-    async def set_schedule_task_state(self,event:AstrMessageEvent,stateNum:int):
-        if stateNum == 1:
-            self.message_target = event.unified_msg_origin
-        else:
-            self.message_target = None
-
     @filter.command("settime")
-    async def settime(self,event:AstrMessageEvent,hour:int,minute:int):
+    async def settime(self, event:AstrMessageEvent, hour:int, minute:int):
+        self.message_target = event.unified_msg_origin
         self.hour = hour
         self.minute = minute
-        logger.info(f"成功设置时间为{self.hour}:{self.minute}")
+        logger.info(f"当前对象：{self.message_target}")
+        yield event.plain_result(f"成功设置时间为{self.hour}:{self.minute}")
+        asyncio.create_task(self.send_scheduled_paceman_leaderboard())
 
-    async def send_scheduled_paceman_leaderboard(self, event: AstrMessageEvent):
+    @filter.command("resettime")
+    async def resettime(self, event:AstrMessageEvent):
+        self.message_target = None
+        self.hour = 8
+        self.minute = 0
+        yield event.plain_result("自定义时间已重置为早上八点")
+
+    async def send_scheduled_paceman_leaderboard(self):
+         logger.info("定时任务已启动")
          tz = pytz.timezone("Asia/Shanghai")  # 设置时区
          while True:
             now = datetime.now(tz)
@@ -173,22 +179,32 @@ class PaceManPlugin(Star):
             next_run = now.replace(hour=self.hour, minute=self.minute, second=0, microsecond=0)
             if now >= next_run:
                 next_run += timedelta(days=1)  # 如果当前时间已经过了固定时间，则设置为明天的时间
+            logger.info(f"当前时间: {now}, 下一次触发时间: {next_run}")
             delay = (next_run - now).total_seconds()
             await asyncio.sleep(delay)  # 等待到固定时间
             await self.send_daily_leaderboard()
     
     async def send_daily_leaderboard(self):
+        logger.info("定时任务已执行")
+        logger.info(f"消息目标: {self.message_target}")
         for user_data in self.player_data.values():
-            data=await self.fetch_sessionstats(user_data["username"])
-            user_data['nether_count'] = data['nether']['count']
-            user_data['gg_count'] = data['finish']['count']
-            user_data['gg_avg'] = data['finish']['avg']
-            self.save_data()
+            try:
+                data = await self.fetch_sessionstats(user_data["username"])
+                if data:
+                    user_data['nether_count'] = data.get('nether', {}).get('count', 0)
+                    user_data['gg_count'] = data.get('finish', {}).get('count', 0)
+                    user_data['gg_avg'] = data.get('finish', {}).get('avg', 0)
+                    self.save_data()
+            except Exception as e:
+                logger.error(f"Error processing user {user_data['username']}: {e}")
+        logger.info("数据已获取")
         player_list = list(self.player_data.values())
-        chain = [Plain("昨日PaceMan排行榜:\n")]
+        chain = []
+        chain.append(Plain("昨日PaceMan排行榜:\n"))
         sorted_by_nether_count = sorted(player_list, key=lambda x: x['nether_count'], reverse=True)
         sorted_by_finish_count = sorted(player_list, key=lambda x: x['gg_count'], reverse=True)
-        sorted_by_finish_time = sorted(player_list, key=lambda x: x['gg_avg'], reverse=True)
+        sorted_by_finish_time = sorted(player_list, key=lambda x: x['gg_avg'])
+        sorted_by_finish_time = [item for item in sorted_by_finish_time if item["gg_avg"] != "0:00"]
         chain.append(Plain("下界数量:\n"))
         for i, user_data in enumerate(sorted_by_nether_count[:3], start=1):
             chain.append(Plain(f"{i}. {user_data['username']}: {user_data['nether_count']}次下界\n"))
@@ -198,10 +214,19 @@ class PaceManPlugin(Star):
         chain.append(Plain("完成时间:\n"))
         for i, user_data in enumerate(sorted_by_finish_time[:3], start=1):
             chain.append(Plain(f"{i}. {user_data['username']}: 平均时间{user_data['gg_avg']}\n"))
-        
+        logger.info(f"消息内容: {chain}")
         # 发送消息
-        await self.context.send_message(self.message_target, chain)
-        logger.info("消息已发送")
+        try:
+            await self.context.send_message(self.message_target, MessageChain(chain))
+            logger.info("消息已发送")
+        except Exception as e:
+            logger.info(f"消息发送失败，错误原因{e}")
+        return chain
+    
+    @filter.command("showldb")
+    async def showldb(self,event:AstrMessageEvent):
+       chain = await self.send_daily_leaderboard()
+       yield event.chain_result(chain)
 
 
     #获取Ranked数据
