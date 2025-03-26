@@ -30,7 +30,7 @@ class PaceManPlugin(Star):
     # 提示用法
     @filter.command("bothelp")
     async def bothelp(self, event: AstrMessageEvent):
-        plain_result=("可使用的指令有\n/paceman 用户名-查询某玩家的24小时数据\n/showldb-展示排行榜\n"
+        plain_result=("可使用的指令有\n/paceman 用户名-查询某玩家的24小时数据\n"
                       "/ldb 参数:\n   nether-下界数量榜\n   finishcount-完成数量榜\n   finishtime-完成时间榜\n"
                       "/rank 用户名-查询某玩家rank数据\n本插件基于Astrbot开发，如有建议请联系墨安QQ:2686014341")
         yield event.plain_result(plain_result)
@@ -99,24 +99,24 @@ class PaceManPlugin(Star):
         player_list = list(self.player_data.values())
         match type:
             case "nether":
-                chain = []
+                result = ""
                 sorted_by_nether_count = sorted(player_list, key=lambda x: x['nether_count'], reverse=True)
                 for i, user_data in enumerate(sorted_by_nether_count[:10], start=1):
-                    chain.append(Comp.Plain(f"{i}. {user_data['username']}: {user_data['nether_count']}次下界\n"))
-                yield event.chain_result(chain)
+                    result+=f"{i}. {user_data['username']}: {user_data['nether_count']}次下界\n"
+                yield event.plain_result(result)
             case "finishcount":
-                chain = []
+                result = ""
                 sorted_by_finish_count = sorted(player_list, key=lambda x: x['gg_count'], reverse=True)
                 for i, user_data in enumerate(sorted_by_finish_count[:10], start=1):
-                    chain.append(Comp.Plain(f"{i}. {user_data['username']}: {user_data['gg_count']}次完成\n"))
-                yield event.chain_result(chain)
+                    result +=f"{i}. {user_data['username']}: {user_data['gg_count']}次完成\n"
+                yield event.plain_result(result)
             case "finishtime":
-                chain = []
+                result = ""
                 sorted_by_finish_time = sorted(player_list, key=lambda x: x['gg_avg'])
                 sorted_by_finish_time = [time for time in sorted_by_finish_time if time != "0:00"]
                 for i, user_data in enumerate(sorted_by_finish_time[:10], start=1):
-                    chain.append(Comp.Plain(f"{i}. {user_data['username']}: 平均时间{user_data['gg_avg']}\n"))
-                yield event.chain_result(chain)
+                    result+=f"{i}. {user_data['username']}: 平均时间{user_data['gg_avg']}\n"
+                yield event.plain_result(result)
 
     # 查询PaceMan个人数据
     @filter.command("paceman")
@@ -130,12 +130,11 @@ class PaceManPlugin(Star):
                 fp_avg=data['first_portal']['avg']
                 gg_count=data['finish']['count']
                 gg_avg=data['finish']['avg']
-                chain = [
-                    Comp.Plain(f"下界数量:{nether_count},平均时间:{nether_avg}"),
-                    Comp.Plain(f"\n盲传数量:{fp_count},平均时间:{fp_avg}"),
-                    Comp.Plain(f"\n完成数量:{gg_count},平均时间:{gg_avg}"),
-                ]
-                yield event.chain_result(chain)
+                result=(f"{username}24小时数据:"
+                        f"下界数量:{nether_count},平均时间:{nether_avg}\n"
+                        f"盲传数量:{fp_count},平均时间:{fp_avg}\n"
+                        f"完成数量:{gg_count},平均时间:{gg_avg}")
+                yield event.plain_result(result)
             else:
                 yield event.plain_result("没有找到该用户。")
         except httpx.HTTPStatusError as e:
@@ -232,60 +231,62 @@ class PaceManPlugin(Star):
                 logger.error(f"Error processing user {user_data['username']}: {e}")
         logger.info("数据已获取")
         player_list = list(self.player_data.values())
-        chain = [Comp.Plain("24小时PaceMan排行榜:\n")]
+        result="24小时PaceMan排行榜:\n"
         sorted_by_nether_count = sorted(player_list, key=lambda x: x['nether_count'], reverse=True)
         sorted_by_finish_count = sorted(player_list, key=lambda x: x['gg_count'], reverse=True)
         sorted_by_finish_time = sorted(player_list, key=lambda x: x['gg_avg'])
         sorted_by_finish_time = [item for item in sorted_by_finish_time if item["gg_avg"] != "0:00"]
-        chain.append(Comp.Plain("下界数量:\n"))
+        result+="下界数量:\n"
         for i, user_data in enumerate(sorted_by_nether_count[:3], start=1):
-            chain.append(Comp.Plain(f"{i}. {user_data['username']}: {user_data['nether_count']}次下界\n"))
-        chain.append(Comp.Plain("完成数量:\n"))
+            result+=f"{i}. {user_data['username']}: {user_data['nether_count']}次下界\n"
+        result+="完成数量:\n"
         for i, user_data in enumerate(sorted_by_finish_count[:3], start=1):
-            chain.append(Comp.Plain(f"{i}. {user_data['username']}: {user_data['gg_count']}次完成\n"))
-        chain.append(Comp.Plain("完成时间:\n"))
+            result+=f"{i}. {user_data['username']}: {user_data['gg_count']}次完成\n"
+        result +="完成时间:\n"
         for i, user_data in enumerate(sorted_by_finish_time[:3], start=1):
-            chain.append(Comp.Plain(f"{i}. {user_data['username']}: 平均时间{user_data['gg_avg']}\n"))
-        logger.info(f"消息内容: {chain}")
+            result+=f"{i}. {user_data['username']}: 平均时间{user_data['gg_avg']}\n"
+        logger.info(f"消息内容: {result}")
+        chain=[]
+        chain.append(Comp.Plain(result))
         # 发送消息
         try:
             await self.context.send_message(message_target, MessageChain(chain))
             logger.info("消息已发送")
         except Exception as e:
             logger.info(f"消息发送失败，错误原因{e}")
-        return chain
+        return result
     
-    @filter.command("showldb")
-    async def showldb(self,event:AstrMessageEvent):
-        for user_data in self.player_data.values():
-            try:
-                data = await self.fetch_sessionstats(user_data["username"])
-                if data:
-                    user_data['nether_count'] = data.get('nether', {}).get('count', 0)
-                    user_data['gg_count'] = data.get('finish', {}).get('count', 0)
-                    user_data['gg_avg'] = data.get('finish', {}).get('avg', 0)
-                    self.save_data(PLAYER_DATA_FILE, self.player_data)
-            except Exception as e:
-                logger.error(f"Error processing user {user_data['username']}: {e}")
-        logger.info("数据已获取")
-        player_list = list(self.player_data.values())
-        chain = []
-        chain.append(Comp.Plain("24小时PaceMan排行榜:\n"))
-        sorted_by_nether_count = sorted(player_list, key=lambda x: x['nether_count'], reverse=True)
-        sorted_by_finish_count = sorted(player_list, key=lambda x: x['gg_count'], reverse=True)
-        sorted_by_finish_time = sorted(player_list, key=lambda x: x['gg_avg'])
-        sorted_by_finish_time = [item for item in sorted_by_finish_time if item["gg_avg"] != "0:00"]
-        chain.append(Comp.Plain("下界数量:\n"))
-        for i, user_data in enumerate(sorted_by_nether_count[:3], start=1):
-            chain.append(Comp.Plain(f"{i}. {user_data['username']}: {user_data['nether_count']}次下界\n"))
-        chain.append(Comp.Plain("完成数量:\n"))
-        for i, user_data in enumerate(sorted_by_finish_count[:3], start=1):
-            chain.append(Comp.Plain(f"{i}. {user_data['username']}: {user_data['gg_count']}次完成\n"))
-        chain.append(Comp.Plain("完成时间:\n"))
-        for i, user_data in enumerate(sorted_by_finish_time[:3], start=1):
-            chain.append(Comp.Plain(f"{i}. {user_data['username']}: 平均时间{user_data['gg_avg']}\n"))
-        logger.info(f"消息内容: {chain}")
-        yield event.chain_result(chain)
+    # @filter.command("showldb")
+    # async def showldb(self,event:AstrMessageEvent):
+    #     for user_data in self.player_data.values():
+    #         try:
+    #             data = await self.fetch_sessionstats(user_data["username"])
+    #             if data:
+    #                 user_data['nether_count'] = data.get('nether', {}).get('count', 0)
+    #                 user_data['gg_count'] = data.get('finish', {}).get('count', 0)
+    #                 user_data['gg_avg'] = data.get('finish', {}).get('avg', 0)
+    #                 self.save_data(PLAYER_DATA_FILE, self.player_data)
+    #         except Exception as e:
+    #             logger.error(f"Error processing user {user_data['username']}: {e}")
+    #     logger.info("数据已获取")
+    #     player_list = list(self.player_data.values())
+    #     chain = []
+    #     chain.append(Comp.Plain("24小时PaceMan排行榜:\n"))
+    #     sorted_by_nether_count = sorted(player_list, key=lambda x: x['nether_count'], reverse=True)
+    #     sorted_by_finish_count = sorted(player_list, key=lambda x: x['gg_count'], reverse=True)
+    #     sorted_by_finish_time = sorted(player_list, key=lambda x: x['gg_avg'])
+    #     sorted_by_finish_time = [item for item in sorted_by_finish_time if item["gg_avg"] != "0:00"]
+    #     chain.append(Comp.Plain("下界数量:\n"))
+    #     for i, user_data in enumerate(sorted_by_nether_count[:3], start=1):
+    #         chain.append(Comp.Plain(f"{i}. {user_data['username']}: {user_data['nether_count']}次下界\n"))
+    #     chain.append(Comp.Plain("完成数量:\n"))
+    #     for i, user_data in enumerate(sorted_by_finish_count[:3], start=1):
+    #         chain.append(Comp.Plain(f"{i}. {user_data['username']}: {user_data['gg_count']}次完成\n"))
+    #     chain.append(Comp.Plain("完成时间:\n"))
+    #     for i, user_data in enumerate(sorted_by_finish_time[:3], start=1):
+    #         chain.append(Comp.Plain(f"{i}. {user_data['username']}: 平均时间{user_data['gg_avg']}\n"))
+    #     logger.info(f"消息内容: {chain}")
+    #     yield event.chain_result(chain)
 
 
     #获取Ranked数据
@@ -312,13 +313,11 @@ class PaceManPlugin(Star):
                     minutes = stdtime.seconds // 60
                     seconds = stdtime.seconds % 60
 
-                    chain = [
-                        Comp.Plain(f"{user}:\n"),
-                        Comp.Plain(f"当前elo:{elorate}\n"),
-                        Comp.Plain(f"当前elo排名:{elorank}\n"),
-                        Comp.Plain(f"赛季PB:{minutes}分{seconds}秒")
-                    ]
-                    yield event.chain_result(chain)
+                    result = (f"{user}:\n"
+                        f"当前elo:{elorate}\n"
+                        f"当前elo排名:{elorank}\n"
+                        f"赛季PB:{minutes}分{seconds}秒")
+                    yield event.plain_result(result)
             else:
                 yield event.plain_result("没有找到该用户。")
         except httpx.HTTPStatusError as e:
