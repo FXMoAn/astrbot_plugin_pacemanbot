@@ -5,6 +5,7 @@ import os
 import pytz
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult, MessageChain
 from astrbot.api.star import Context, Star, register
+import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.core.message.components import At, Plain
 from datetime import datetime, timedelta
@@ -25,23 +26,14 @@ class PaceManPlugin(Star):
         self.hour = 8
         self.minute = 0
         self.paceman_tasks = {}
-        
 
     # 提示用法
     @filter.command("bothelp")
     async def bothelp(self, event: AstrMessageEvent):
-        chain = [
-                    Plain("可使用的指令有\n"),
-                    Plain("/paceman 用户名-查询某玩家的24小时数据\n"),
-                    Plain("/showldb-展示排行榜\n"),
-                    Plain("/ldb 参数:\n"),
-                    Plain("   nether-下界数量榜\n"),
-                    Plain("   finishcount-完成数量榜\n"),
-                    Plain("   finishtime-完成时间榜\n"),
-                    Plain("/rank 用户名-查询某玩家rank数据\n"),
-                    Plain("本插件基于Astrbot开发，如有建议请联系墨安QQ:2686014341")
-                ]
-        yield event.chain_result(chain)
+        plain_result=("可使用的指令有\n/paceman 用户名-查询某玩家的24小时数据\n/showldb-展示排行榜\n"
+                      "/ldb 参数:\n   nether-下界数量榜\n   finishcount-完成数量榜\n   finishtime-完成时间榜\n"
+                      "/rank 用户名-查询某玩家rank数据\n本插件基于Astrbot开发，如有建议请联系墨安QQ:2686014341")
+        yield event.plain_result(plain_result)
 
     def load_data(self,filename):
         # 传入filename文件名，返回json
@@ -100,8 +92,9 @@ class PaceManPlugin(Star):
                     user_data['nether_count'] = data['nether']['count']
                     user_data['gg_count'] = data['finish']['count']
                     user_data['gg_avg'] = data['finish']['avg']
-                logger.info("数据已更新")
+                # 这里要改的
                 self.save_data(PLAYER_DATA_FILE, self.player_data)
+            logger.info("数据已更新")
         # 将数据集转化为列表便于处理
         player_list = list(self.player_data.values())
         match type:
@@ -109,20 +102,20 @@ class PaceManPlugin(Star):
                 chain = []
                 sorted_by_nether_count = sorted(player_list, key=lambda x: x['nether_count'], reverse=True)
                 for i, user_data in enumerate(sorted_by_nether_count[:10], start=1):
-                    chain.append(Plain(f"{i}. {user_data['username']}: {user_data['nether_count']}次下界\n"))
+                    chain.append(Comp.Plain(f"{i}. {user_data['username']}: {user_data['nether_count']}次下界\n"))
                 yield event.chain_result(chain)
             case "finishcount":
                 chain = []
                 sorted_by_finish_count = sorted(player_list, key=lambda x: x['gg_count'], reverse=True)
                 for i, user_data in enumerate(sorted_by_finish_count[:10], start=1):
-                    chain.append(Plain(f"{i}. {user_data['username']}: {user_data['gg_count']}次完成\n"))
+                    chain.append(Comp.Plain(f"{i}. {user_data['username']}: {user_data['gg_count']}次完成\n"))
                 yield event.chain_result(chain)
             case "finishtime":
                 chain = []
                 sorted_by_finish_time = sorted(player_list, key=lambda x: x['gg_avg'])
                 sorted_by_finish_time = [time for time in sorted_by_finish_time if time != "0:00"]
                 for i, user_data in enumerate(sorted_by_finish_time[:10], start=1):
-                    chain.append(Plain(f"{i}. {user_data['username']}: 平均时间{user_data['gg_avg']}\n"))
+                    chain.append(Comp.Plain(f"{i}. {user_data['username']}: 平均时间{user_data['gg_avg']}\n"))
                 yield event.chain_result(chain)
 
     # 查询PaceMan个人数据
@@ -138,9 +131,9 @@ class PaceManPlugin(Star):
                 gg_count=data['finish']['count']
                 gg_avg=data['finish']['avg']
                 chain = [
-                    Plain(f"下界数量:{nether_count},平均时间:{nether_avg}"),
-                    Plain(f"\n盲传数量:{fp_count},平均时间:{fp_avg}"),
-                    Plain(f"\n完成数量:{gg_count},平均时间:{gg_avg}"),
+                    Comp.Plain(f"下界数量:{nether_count},平均时间:{nether_avg}"),
+                    Comp.Plain(f"\n盲传数量:{fp_count},平均时间:{fp_avg}"),
+                    Comp.Plain(f"\n完成数量:{gg_count},平均时间:{gg_avg}"),
                 ]
                 yield event.chain_result(chain)
             else:
@@ -154,7 +147,7 @@ class PaceManPlugin(Star):
         except json.JSONDecodeError as e:
             yield event.plain_result(f"解析JSON时发生错误: {e}")
         except Exception as e:
-            self.context.logger.exception("Paceman command error:") 
+            logger.exception("Paceman command error:")
             yield event.plain_result(f"发生未知错误: {e}")
 
     #定时返回PaceMan榜单
@@ -171,6 +164,8 @@ class PaceManPlugin(Star):
             except Exception as e:
                 logger.exception(f"群组{group_id}定时任务开启失败:{e}")
         logger.info(f"目前开启任务的群组有{self.paceman_tasks}")
+
+    from astrbot.api.event import filter, AstrMessageEvent
 
     @filter.command("settime")
     async def settime(self, event:AstrMessageEvent, hour:int, minute:int):
@@ -237,21 +232,20 @@ class PaceManPlugin(Star):
                 logger.error(f"Error processing user {user_data['username']}: {e}")
         logger.info("数据已获取")
         player_list = list(self.player_data.values())
-        chain = []
-        chain.append(Plain("昨日PaceMan排行榜:\n"))
+        chain = [Comp.Plain("24小时PaceMan排行榜:\n")]
         sorted_by_nether_count = sorted(player_list, key=lambda x: x['nether_count'], reverse=True)
         sorted_by_finish_count = sorted(player_list, key=lambda x: x['gg_count'], reverse=True)
         sorted_by_finish_time = sorted(player_list, key=lambda x: x['gg_avg'])
         sorted_by_finish_time = [item for item in sorted_by_finish_time if item["gg_avg"] != "0:00"]
-        chain.append(Plain("下界数量:\n"))
+        chain.append(Comp.Plain("下界数量:\n"))
         for i, user_data in enumerate(sorted_by_nether_count[:3], start=1):
-            chain.append(Plain(f"{i}. {user_data['username']}: {user_data['nether_count']}次下界\n"))
-        chain.append(Plain("完成数量:\n"))
+            chain.append(Comp.Plain(f"{i}. {user_data['username']}: {user_data['nether_count']}次下界\n"))
+        chain.append(Comp.Plain("完成数量:\n"))
         for i, user_data in enumerate(sorted_by_finish_count[:3], start=1):
-            chain.append(Plain(f"{i}. {user_data['username']}: {user_data['gg_count']}次完成\n"))
-        chain.append(Plain("完成时间:\n"))
+            chain.append(Comp.Plain(f"{i}. {user_data['username']}: {user_data['gg_count']}次完成\n"))
+        chain.append(Comp.Plain("完成时间:\n"))
         for i, user_data in enumerate(sorted_by_finish_time[:3], start=1):
-            chain.append(Plain(f"{i}. {user_data['username']}: 平均时间{user_data['gg_avg']}\n"))
+            chain.append(Comp.Plain(f"{i}. {user_data['username']}: 平均时间{user_data['gg_avg']}\n"))
         logger.info(f"消息内容: {chain}")
         # 发送消息
         try:
@@ -276,20 +270,20 @@ class PaceManPlugin(Star):
         logger.info("数据已获取")
         player_list = list(self.player_data.values())
         chain = []
-        chain.append(Plain("昨日PaceMan排行榜:\n"))
+        chain.append(Comp.Plain("24小时PaceMan排行榜:\n"))
         sorted_by_nether_count = sorted(player_list, key=lambda x: x['nether_count'], reverse=True)
         sorted_by_finish_count = sorted(player_list, key=lambda x: x['gg_count'], reverse=True)
         sorted_by_finish_time = sorted(player_list, key=lambda x: x['gg_avg'])
         sorted_by_finish_time = [item for item in sorted_by_finish_time if item["gg_avg"] != "0:00"]
-        chain.append(Plain("下界数量:\n"))
+        chain.append(Comp.Plain("下界数量:\n"))
         for i, user_data in enumerate(sorted_by_nether_count[:3], start=1):
-            chain.append(Plain(f"{i}. {user_data['username']}: {user_data['nether_count']}次下界\n"))
-        chain.append(Plain("完成数量:\n"))
+            chain.append(Comp.Plain(f"{i}. {user_data['username']}: {user_data['nether_count']}次下界\n"))
+        chain.append(Comp.Plain("完成数量:\n"))
         for i, user_data in enumerate(sorted_by_finish_count[:3], start=1):
-            chain.append(Plain(f"{i}. {user_data['username']}: {user_data['gg_count']}次完成\n"))
-        chain.append(Plain("完成时间:\n"))
+            chain.append(Comp.Plain(f"{i}. {user_data['username']}: {user_data['gg_count']}次完成\n"))
+        chain.append(Comp.Plain("完成时间:\n"))
         for i, user_data in enumerate(sorted_by_finish_time[:3], start=1):
-            chain.append(Plain(f"{i}. {user_data['username']}: 平均时间{user_data['gg_avg']}\n"))
+            chain.append(Comp.Plain(f"{i}. {user_data['username']}: 平均时间{user_data['gg_avg']}\n"))
         logger.info(f"消息内容: {chain}")
         yield event.chain_result(chain)
 
@@ -319,10 +313,10 @@ class PaceManPlugin(Star):
                     seconds = stdtime.seconds % 60
 
                     chain = [
-                        Plain(f"{user}:\n"),
-                        Plain(f"当前elo:{elorate}\n"),
-                        Plain(f"当前elo排名:{elorank}\n"),
-                        Plain(f"赛季PB:{minutes}分{seconds}秒")
+                        Comp.Plain(f"{user}:\n"),
+                        Comp.Plain(f"当前elo:{elorate}\n"),
+                        Comp.Plain(f"当前elo排名:{elorank}\n"),
+                        Comp.Plain(f"赛季PB:{minutes}分{seconds}秒")
                     ]
                     yield event.chain_result(chain)
             else:
