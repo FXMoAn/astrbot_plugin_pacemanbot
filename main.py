@@ -38,7 +38,7 @@ class PaceManPlugin(Star):
     async def bothelp(self, event: AstrMessageEvent):
         plain_result=("可使用的指令有\n/register 用户名-注册\n"
                       "/paceman-查询自己的24小时数据\n"
-                      "/rank 用户名-查询某玩家rank数据\n"
+                      "/rank-查询自己的rank数据\n"
                       "本插件基于Astrbot开发，如有建议请联系墨安QQ:2686014341或者去github上提issue\n"
                       "仓库地址：https://github.com/FXMoAn/astrbot_plugin_pacemanbot")
         yield event.plain_result(plain_result)
