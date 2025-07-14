@@ -273,13 +273,13 @@ class PaceManPlugin(Star):
                 personalbest=data['data']['statistics']['season']['bestTime']['ranked']
                 forfeits=data['data']['statistics']['season']['forfeits']['ranked']
                 playedMatches=data['data']['statistics']['season']['playedMatches']['ranked']
-                forfeits_rate=forfeits/playedMatches
                 completions=data['data']['statistics']['season']['completions']['ranked']
                 completionTime=data['data']['statistics']['season']['completionTime']['ranked']
-                avg_completion_time=completionTime/completions
                 if personalbest is None:
                     yield event.plain_result("您本赛季未参加ranked。")
                 else:
+                    forfeits_rate=forfeits/playedMatches
+                    avg_completion_time=completionTime/completions
                     pb_m,pb_s=get_time(personalbest)
                     avg_m,avg_s=get_time(avg_completion_time)
 
