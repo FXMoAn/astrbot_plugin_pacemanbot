@@ -287,7 +287,7 @@ class PaceManPlugin(Star):
                         f"当前elo:{elorate}\n"
                         f"当前elo排名:{elorank}\n"
                         f"赛季PB:{pb_m}分{pb_s}秒\n"
-                        f"赛季弃权率:{forfeits_rate*100}%\n"
+                        f"赛季弃权率:{forfeits_rate*100:.2f}%\n"
                         f"赛季平均完成时间:{avg_m}分{avg_s}秒")
                     yield event.plain_result(result)
             else:
