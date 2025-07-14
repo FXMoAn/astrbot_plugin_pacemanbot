@@ -275,11 +275,13 @@ class PaceManPlugin(Star):
                 playedMatches=data['data']['statistics']['season']['playedMatches']['ranked']
                 completions=data['data']['statistics']['season']['completions']['ranked']
                 completionTime=data['data']['statistics']['season']['completionTime']['ranked']
+                wins=data['data']['statistics']['season']['wins']['ranked']
                 if personalbest is None:
                     yield event.plain_result("您本赛季未参加ranked。")
                 else:
                     forfeits_rate=forfeits/playedMatches
                     avg_completion_time=completionTime/completions
+                    win_rate=wins/playedMatches
                     pb_m,pb_s=get_time(personalbest)
                     avg_m,avg_s=get_time(avg_completion_time)
 
@@ -287,6 +289,7 @@ class PaceManPlugin(Star):
                         f"当前elo:{elorate}\n"
                         f"当前elo排名:{elorank}\n"
                         f"赛季PB:{pb_m}分{pb_s}秒\n"
+                        f"赛季胜率:{win_rate*100:.2f}%\n"
                         f"赛季弃权率:{forfeits_rate*100:.2f}%\n"
                         f"赛季平均完成时间:{avg_m}分{avg_s}秒")
                     yield event.plain_result(result)
