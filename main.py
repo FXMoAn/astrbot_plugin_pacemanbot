@@ -17,9 +17,6 @@ except ImportError:
     from paceman import *
     from utils import *
 
-from paceman import *
-from utils import *
-
 PLAYER_DATA_FILE = "data/astrbot-pacemanbot.json"
 SCHEDULED_TASK_FILE = "data/astrbot-pacemanbot-scheduled_task.json"
 
