@@ -98,15 +98,15 @@ class Service:
 
 if __name__ == "__main__":
     data = {
-        "nether": {"count": 10, "avg": "1.23"},
-        "bastion": {"count": 3, "avg": "4.56"},
-        "fortress": {"count": 2, "avg": "5.67"},
-        "first_structure": {"count": 1, "avg": "6.78"},
-        "second_structure": {"count": 0, "avg": "7.89"},
-        "first_portal": {"count": 4, "avg": "8.90"},
-        "stronghold": {"count": 1, "avg": "9.01"},
-        "end": {"count": 1, "avg": "10.11"},
-        "finish": {"count": 1, "avg": "11.12"},
+        "nether": StructureStats(count=10, avg="1.23"),
+        "bastion": StructureStats(count=3, avg="4.56"),
+        "fortress": StructureStats(count=2, avg="5.67"),
+        "first_structure": StructureStats(count=1, avg="6.78"),
+        "second_structure": StructureStats(count=0, avg="7.89"),
+        "first_portal": StructureStats(count=4, avg="8.90"),
+        "stronghold": StructureStats(count=1, avg="9.01"),
+        "end": StructureStats(count=1, avg="10.11"),
+        "finish": StructureStats(count=1, avg="11.12"),
     }
     test = UserSessionStats(**data)
 

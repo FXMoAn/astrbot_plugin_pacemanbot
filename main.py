@@ -17,6 +17,8 @@ except ImportError:
     from pacemanService import *
     from utils import *
 
+from pacemanService import *
+from utils import *
 
 PLAYER_DATA_FILE = "data/astrbot-pacemanbot.json"
 SCHEDULED_TASK_FILE = "data/astrbot-pacemanbot-scheduled_task.json"
@@ -52,6 +54,8 @@ class PaceManPlugin(Star):
                 "gg_count": 0,
                 "gg_avg": "0:00"
             }
+        else:
+            self.player_data[userid]['username'] = username
         return self.player_data[userid]
 
     # 获取PaceMan数据
@@ -152,8 +156,6 @@ class PaceManPlugin(Star):
             except Exception as e:
                 logger.exception(f"群组{group_id}定时任务开启失败:{e}")
         logger.info(f"目前开启任务的群组有{self.paceman_tasks}")
-
-    from astrbot.api.event import filter, AstrMessageEvent
 
     @filter.command("settime")
     async def settime(self, event:AstrMessageEvent, hour:int, minute:int):
