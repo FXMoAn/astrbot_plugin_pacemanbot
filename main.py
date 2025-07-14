@@ -11,14 +11,11 @@ from astrbot.core.message.components import At, Plain
 from datetime import datetime, timedelta
 
 try:
-    from .pacemanService import *
+    from .paceman import *
     from .utils import *
 except ImportError:
-    from pacemanService import *
+    from paceman import *
     from utils import *
-
-from pacemanService import *
-from utils import *
 
 PLAYER_DATA_FILE = "data/astrbot-pacemanbot.json"
 SCHEDULED_TASK_FILE = "data/astrbot-pacemanbot-scheduled_task.json"
@@ -41,7 +38,7 @@ class PaceManPlugin(Star):
     async def bothelp(self, event: AstrMessageEvent):
         plain_result=("可使用的指令有\n/register 用户名-注册\n"
                       "/paceman-查询自己的24小时数据\n"
-                      "/rank 用户名-查询某玩家rank数据\n"
+                      "/rank-查询自己的rank数据\n"
                       "本插件基于Astrbot开发，如有建议请联系墨安QQ:2686014341或者去github上提issue\n"
                       "仓库地址：https://github.com/FXMoAn/astrbot_plugin_pacemanbot")
         yield event.plain_result(plain_result)
@@ -63,12 +60,14 @@ class PaceManPlugin(Star):
         async with httpx.AsyncClient(timeout=10.0) as client:
             response=await client.get(f"{self.baseUrl}/getSessionStats/?name={username}&hours=24&hoursBetween=24")
             response.raise_for_status()
+            logger.info(f"PaceMan数据: {response.json()}")
             return response.json()
 
     async def fetch_nphstats(self,username:str):
         async with httpx.AsyncClient(timeout=10.0) as client:
             response=await client.get(f"{self.baseUrl}/getNPH/?name={username}&hours=24&hoursBetween=24")
             response.raise_for_status()
+            logger.info(f"PaceMan数据: {response.json()}")
             return response.json()
 
     # 将用户添加到列表中
@@ -94,13 +93,13 @@ class PaceManPlugin(Star):
         try:
             userid = event.get_sender_id()
             if userid not in self.player_data.keys():
-                yield event.plain_result("请先使用/register命令注册")
+                yield event.plain_result("请先使用 '/register 用户名' 命令注册")
                 return
             username = self.player_data[userid]['username']
             sessiondata = await self.fetch_sessionstats(username)
             nphdata = await self.fetch_nphstats(username)
             data = UserSessionStats(**sessiondata)
-            service = Service(username,data)
+            service = Paceman(username,data)
             if data.nether:
                 sessionresult=(f"{username}\n"
                         f"下界数量:{data.nether.count},平均时间:{data.nether.avg}\n"
@@ -252,39 +251,6 @@ class PaceManPlugin(Star):
         except Exception as e:
             logger.info(f"消息发送失败，错误原因{e}")
         return result
-    
-    # @filter.command("showldb")
-    # async def showldb(self,event:AstrMessageEvent):
-    #     for user_data in self.player_data.values():
-    #         try:
-    #             data = await self.fetch_sessionstats(user_data["username"])
-    #             if data:
-    #                 user_data['nether_count'] = data.get('nether', {}).get('count', 0)
-    #                 user_data['gg_count'] = data.get('finish', {}).get('count', 0)
-    #                 user_data['gg_avg'] = data.get('finish', {}).get('avg', 0)
-    #                 self.save_data(PLAYER_DATA_FILE, self.player_data)
-    #         except Exception as e:
-    #             logger.error(f"Error processing user {user_data['username']}: {e}")
-    #     logger.info("数据已获取")
-    #     player_list = list(self.player_data.values())
-    #     chain = []
-    #     chain.append(Comp.Plain("24小时PaceMan排行榜:\n"))
-    #     sorted_by_nether_count = sorted(player_list, key=lambda x: x['nether_count'], reverse=True)
-    #     sorted_by_finish_count = sorted(player_list, key=lambda x: x['gg_count'], reverse=True)
-    #     sorted_by_finish_time = sorted(player_list, key=lambda x: x['gg_avg'])
-    #     sorted_by_finish_time = [item for item in sorted_by_finish_time if item["gg_avg"] != "0:00"]
-    #     chain.append(Comp.Plain("下界数量:\n"))
-    #     for i, user_data in enumerate(sorted_by_nether_count[:3], start=1):
-    #         chain.append(Comp.Plain(f"{i}. {user_data['username']}: {user_data['nether_count']}次下界\n"))
-    #     chain.append(Comp.Plain("完成数量:\n"))
-    #     for i, user_data in enumerate(sorted_by_finish_count[:3], start=1):
-    #         chain.append(Comp.Plain(f"{i}. {user_data['username']}: {user_data['gg_count']}次完成\n"))
-    #     chain.append(Comp.Plain("完成时间:\n"))
-    #     for i, user_data in enumerate(sorted_by_finish_time[:3], start=1):
-    #         chain.append(Comp.Plain(f"{i}. {user_data['username']}: 平均时间{user_data['gg_avg']}\n"))
-    #     logger.info(f"消息内容: {chain}")
-    #     yield event.chain_result(chain)
-
 
     #获取Ranked数据
     async def fetch_rankstats(self,username:str):
@@ -295,25 +261,37 @@ class PaceManPlugin(Star):
 
     #查询Ranked个人数据
     @filter.command("rank")
-    async def rank(self, event: AstrMessageEvent, username: str):
+    async def rank(self, event: AstrMessageEvent):
         try:
+            userid = event.get_sender_id()
+            username = self.player_data[userid]['username']
             data = await self.fetch_rankstats(username)
             if data['status']=='success':
                 user=data['data']['nickname']
                 elorate=data['data']['eloRate']
                 elorank=data['data']['eloRank']
                 personalbest=data['data']['statistics']['season']['bestTime']['ranked']
+                forfeits=data['data']['statistics']['season']['forfeits']['ranked']
+                playedMatches=data['data']['statistics']['season']['playedMatches']['ranked']
+                completions=data['data']['statistics']['season']['completions']['ranked']
+                completionTime=data['data']['statistics']['season']['completionTime']['ranked']
+                wins=data['data']['statistics']['season']['wins']['ranked']
                 if personalbest is None:
-                    yield event.plain_result("该玩家本赛季未参加ranked。")
+                    yield event.plain_result("您本赛季未参加ranked。")
                 else:
-                    stdtime = timedelta(seconds=personalbest/1000)
-                    minutes = stdtime.seconds // 60
-                    seconds = stdtime.seconds % 60
+                    forfeits_rate=forfeits/playedMatches
+                    avg_completion_time=completionTime/completions
+                    win_rate=wins/playedMatches
+                    pb_m,pb_s=get_time(personalbest)
+                    avg_m,avg_s=get_time(avg_completion_time)
 
                     result = (f"{user}:\n"
                         f"当前elo:{elorate}\n"
                         f"当前elo排名:{elorank}\n"
-                        f"赛季PB:{minutes}分{seconds}秒")
+                        f"赛季PB:{pb_m}分{pb_s}秒\n"
+                        f"赛季胜率:{win_rate*100:.2f}%\n"
+                        f"赛季弃权率:{forfeits_rate*100:.2f}%\n"
+                        f"赛季平均完成时间:{avg_m}分{avg_s}秒")
                     yield event.plain_result(result)
             else:
                 yield event.plain_result("没有找到该用户。")

@@ -18,26 +18,25 @@ class UserSessionStats(BaseModel):
     end: StructureStats
     finish: StructureStats
 
-class Service:
+class Paceman:
     # imgpath = './img'
     imgpath = "/root/astrbot/data/plugins/astrbot_plugin_pacemanbot/img"
     # 背景图片
     smallfont = ImageFont.truetype(f"{imgpath}/1_Minecraft-Regular.otf", 24)
     bigfont = ImageFont.truetype(f"{imgpath}/1_Minecraft-Regular.otf", 40)
 
-
     def __init__(self,uname: str, data:UserSessionStats):
         self._uname = uname
         self.data = data
-        self.background = Image.open(f"{Service.imgpath}/background.webp").convert("RGBA")
+        self.background = Image.open(f"{Paceman.imgpath}/background.webp").convert("RGBA")
         self.icons = {
-            "nether": Image.open(f"{Service.imgpath}/nether.webp").convert("RGBA"),
-            "bastion": Image.open(f"{Service.imgpath}/bastion.webp").convert("RGBA"),
-            "fortress": Image.open(f"{Service.imgpath}/fortress.webp").convert("RGBA"),
-            "first_portal": Image.open(f"{Service.imgpath}/first_portal.webp").convert("RGBA"),
-            "stronghold": Image.open(f"{Service.imgpath}/stronghold.webp").convert("RGBA"),
-            "end": Image.open(f"{Service.imgpath}/end.webp").convert("RGBA"),
-            "finish": Image.open(f"{Service.imgpath}/finish.webp").convert("RGBA"),
+            "nether": Image.open(f"{Paceman.imgpath}/nether.webp").convert("RGBA"),
+            "bastion": Image.open(f"{Paceman.imgpath}/bastion.webp").convert("RGBA"),
+            "fortress": Image.open(f"{Paceman.imgpath}/fortress.webp").convert("RGBA"),
+            "first_portal": Image.open(f"{Paceman.imgpath}/first_portal.webp").convert("RGBA"),
+            "stronghold": Image.open(f"{Paceman.imgpath}/stronghold.webp").convert("RGBA"),
+            "end": Image.open(f"{Paceman.imgpath}/end.webp").convert("RGBA"),
+            "finish": Image.open(f"{Paceman.imgpath}/finish.webp").convert("RGBA"),
         }
         self.stats = {
             "netherstats": f'{self.data.nether.count} {self.data.nether.avg}',
@@ -63,11 +62,11 @@ class Service:
         with httpx.Client() as client:
             response = client.get(url, headers=headers)
             if response.status_code == 200:
-                with open(f"{Service.imgpath}/{self._uname}.webp", "wb") as f:
+                with open(f"{Paceman.imgpath}/{self._uname}.webp", "wb") as f:
                     f.write(response.content)
 
         try:
-            image = Image.open(f"{Service.imgpath}/{self._uname}.webp").convert("RGBA")
+            image = Image.open(f"{Paceman.imgpath}/{self._uname}.webp").convert("RGBA")
             image = image.resize((158, 256))
             position = (350, 70)
             self.background.paste(image, position, mask=image)
@@ -77,15 +76,15 @@ class Service:
     def generate_stats(self):
         # 绘制玩家昵称
         draw = ImageDraw.Draw(self.background)
-        text_width = draw.textlength(self._uname, font=Service.smallfont)
+        text_width = draw.textlength(self._uname, font=Paceman.smallfont)
         x = 430 - text_width / 2
-        draw.text((x, 30), self._uname, fill="white", font=Service.smallfont)
+        draw.text((x, 30), self._uname, fill="white", font=Paceman.smallfont)
         # 绘制数据
         for index, key in enumerate(self.stats):
             text_position = (100, index * 46 + 20)
-            draw.text(text_position, self.stats[key], fill="white", font=Service.bigfont)
+            draw.text(text_position, self.stats[key], fill="white", font=Paceman.bigfont)
         self.background.save("/root/astrbot/data/plugins/astrbot_plugin_pacemanbot/result/output.png")
-        # Service.background.save("./result/output.png")
+        # Paceman.background.save("./result/output.png")
 
     def generate_image(self):
         logger.info("Generating image...")
@@ -110,4 +109,4 @@ if __name__ == "__main__":
     }
     test = UserSessionStats(**data)
 
-    Service('doogile',test).generate_image()
+    Paceman('doogile',test).generate_image()
