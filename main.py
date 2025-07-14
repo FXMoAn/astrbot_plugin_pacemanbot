@@ -60,12 +60,14 @@ class PaceManPlugin(Star):
         async with httpx.AsyncClient(timeout=10.0) as client:
             response=await client.get(f"{self.baseUrl}/getSessionStats/?name={username}&hours=24&hoursBetween=24")
             response.raise_for_status()
+            logger.info(f"PaceMan数据: {response.json()}")
             return response.json()
 
     async def fetch_nphstats(self,username:str):
         async with httpx.AsyncClient(timeout=10.0) as client:
             response=await client.get(f"{self.baseUrl}/getNPH/?name={username}&hours=24&hoursBetween=24")
             response.raise_for_status()
+            logger.info(f"PaceMan数据: {response.json()}")
             return response.json()
 
     # 将用户添加到列表中
@@ -269,11 +271,11 @@ class PaceManPlugin(Star):
                 elorate=data['data']['eloRate']
                 elorank=data['data']['eloRank']
                 personalbest=data['data']['statistics']['season']['bestTime']['ranked']
-                forfeits=data['data']['statistics']['season']['forfeits']
-                playedMatches=data['data']['statistics']['season']['playedMatches']
+                forfeits=data['data']['statistics']['season']['forfeits']['ranked']
+                playedMatches=data['data']['statistics']['season']['playedMatches']['ranked']
                 forfeits_rate=forfeits/playedMatches
-                completions=data['data']['statistics']['season']['completions']
-                completionTime=data['data']['statistics']['season']['completionTime']
+                completions=data['data']['statistics']['season']['completions']['ranked']
+                completionTime=data['data']['statistics']['season']['completionTime']['ranked']
                 avg_completion_time=completionTime/completions
                 if personalbest is None:
                     yield event.plain_result("您本赛季未参加ranked。")
