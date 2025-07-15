@@ -89,13 +89,17 @@ class PaceManPlugin(Star):
 
     # 查询PaceMan个人数据
     @filter.command("paceman")
-    async def paceman(self, event: AstrMessageEvent):
+    async def paceman(self, event: AstrMessageEvent, name = None):
         try:
-            userid = event.get_sender_id()
-            if userid not in self.player_data.keys():
-                yield event.plain_result("请先使用 '/register 用户名' 命令注册")
-                return
-            username = self.player_data[userid]['username']
+            if name is None:
+                userid = event.get_sender_id()
+                if userid not in self.player_data.keys():
+                    yield event.plain_result("请先使用 '/register 用户名' 命令注册")
+                    return
+                username = self.player_data[userid]['username']
+            else:
+                username = name
+            
             sessiondata = await self.fetch_sessionstats(username)
             nphdata = await self.fetch_nphstats(username)
             data = UserSessionStats(**sessiondata)
@@ -261,10 +265,16 @@ class PaceManPlugin(Star):
 
     #查询Ranked个人数据
     @filter.command("rank")
-    async def rank(self, event: AstrMessageEvent):
+    async def rank(self, event: AstrMessageEvent, name = None):
         try:
-            userid = event.get_sender_id()
-            username = self.player_data[userid]['username']
+            if name is None:
+                userid = event.get_sender_id()
+                if userid not in self.player_data.keys():
+                    yield event.plain_result("请先使用 '/register 用户名' 命令注册")
+                    return
+                username = self.player_data[userid]['username']
+            else:
+                username = name
             data = await self.fetch_rankstats(username)
             if data['status']=='success':
                 user=data['data']['nickname']
