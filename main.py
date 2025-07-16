@@ -287,7 +287,7 @@ class PaceManPlugin(Star):
                 completionTime=data['data']['statistics']['season']['completionTime']['ranked']
                 wins=data['data']['statistics']['season']['wins']['ranked']
                 if personalbest is None:
-                    yield event.plain_result("您本赛季未参加ranked。")
+                    yield event.plain_result(f"{username}本赛季未参加ranked。")
                 else:
                     forfeits_rate=forfeits/playedMatches
                     avg_completion_time=completionTime/completions
