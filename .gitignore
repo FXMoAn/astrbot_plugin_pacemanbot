@@ -1,6 +1,6 @@
 img/
 result/
-_pycache_/
+__pycache__/
 data/
 
 test.py
