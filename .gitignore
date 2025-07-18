@@ -3,5 +3,4 @@ result/
 _pycache_/
 data/
 
-.gitignore
 test.py
