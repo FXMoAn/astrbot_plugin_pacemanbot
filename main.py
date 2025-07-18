@@ -20,7 +20,7 @@ except ImportError:
 PLAYER_DATA_FILE = "data/astrbot-pacemanbot.json"
 SCHEDULED_TASK_FILE = "data/astrbot-pacemanbot-scheduled_task.json"
 
-@register("pacemanbot", "Mo_An", "支持查询我的世界速通数据", "1.2.0")
+@register("pacemanbot", "Mo_An", "支持查询我的世界速通数据", "1.2.1")
 class PaceManPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
