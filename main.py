@@ -107,8 +107,8 @@ class PaceManPlugin(Star):
             if data.nether:
                 sessionresult=(f"{username}\n"
                         f"下界数量:{data.nether.count},平均时间:{data.nether.avg}\n"
-                        f"猪堡数量:{data.bastion.count},平均时间:{data.bastion.avg}\n"
-                        f"下要数量:{data.fortress.count},平均时间:{data.fortress.avg}\n"
+                        f"猪堡数量:{data.first_structure.count},平均时间:{data.first_structure.avg}\n"
+                        f"下要数量:{data.second_structure.count},平均时间:{data.second_structure.avg}\n"
                         f"盲传数量:{data.first_portal.count},平均时间:{data.first_portal.avg}\n"
                         f"要塞数量:{data.stronghold.count},平均时间:{data.stronghold.avg}\n"
                         f"末地数量:{data.end.count},平均时间:{data.end.avg}\n"
