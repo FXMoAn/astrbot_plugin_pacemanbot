@@ -20,7 +20,7 @@ except ImportError:
 PLAYER_DATA_FILE = "data/astrbot-pacemanbot.json"
 SCHEDULED_TASK_FILE = "data/astrbot-pacemanbot-scheduled_task.json"
 
-@register("pacemanbot", "Mo_An", "支持查询我的世界速通数据", "1.2.0")
+@register("pacemanbot", "Mo_An", "支持查询我的世界速通数据", "1.2.1")
 class PaceManPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
@@ -107,8 +107,8 @@ class PaceManPlugin(Star):
             if data.nether:
                 sessionresult=(f"{username}\n"
                         f"下界数量:{data.nether.count},平均时间:{data.nether.avg}\n"
-                        f"猪堡数量:{data.bastion.count},平均时间:{data.bastion.avg}\n"
-                        f"下要数量:{data.fortress.count},平均时间:{data.fortress.avg}\n"
+                        f"猪堡数量:{data.first_structure.count},平均时间:{data.first_structure.avg}\n"
+                        f"下要数量:{data.second_structure.count},平均时间:{data.second_structure.avg}\n"
                         f"盲传数量:{data.first_portal.count},平均时间:{data.first_portal.avg}\n"
                         f"要塞数量:{data.stronghold.count},平均时间:{data.stronghold.avg}\n"
                         f"末地数量:{data.end.count},平均时间:{data.end.avg}\n"
@@ -287,7 +287,7 @@ class PaceManPlugin(Star):
                 completionTime=data['data']['statistics']['season']['completionTime']['ranked']
                 wins=data['data']['statistics']['season']['wins']['ranked']
                 if personalbest is None:
-                    yield event.plain_result("您本赛季未参加ranked。")
+                    yield event.plain_result(f"{username}本赛季未参加ranked。")
                 else:
                     forfeits_rate=forfeits/playedMatches
                     avg_completion_time=completionTime/completions
