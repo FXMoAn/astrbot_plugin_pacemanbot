@@ -1,6 +1,6 @@
 name: pacemanbot
 desc: 支持查询paceman、rank的数据信息
 help: 输入 /bothelp 查看关键词回复帮助
-version: v1.2.1
+version: v1.2.2
 author: Mo_An
 repo: https://github.com/FXMoAn/astrbot_plugin_pacemanbot

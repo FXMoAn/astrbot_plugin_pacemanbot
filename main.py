@@ -20,12 +20,11 @@ except ImportError:
 PLAYER_DATA_FILE = "data/astrbot-pacemanbot.json"
 SCHEDULED_TASK_FILE = "data/astrbot-pacemanbot-scheduled_task.json"
 
-@register("pacemanbot", "Mo_An", "支持查询我的世界速通数据", "1.2.1")
+@register("pacemanbot", "Mo_An", "支持查询我的世界速通数据", "1.2.2")
 class PaceManPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
         self.semaphore = asyncio.Semaphore(10)
-        self.baseUrl="https://paceman.gg/stats/api"
         self.player_data=load_data(PLAYER_DATA_FILE)
         self.scheduled_data=load_data(SCHEDULED_TASK_FILE)
         self.message_target = None
@@ -38,6 +37,7 @@ class PaceManPlugin(Star):
     async def bothelp(self, event: AstrMessageEvent):
         plain_result=("可使用的指令有\n/register 用户名-注册\n"
                       "/paceman-查询自己的24小时数据\n"
+                      "/run-查询自己的最近一次速通数据\n"
                       "/rank-查询自己的rank数据\n"
                       "本插件基于Astrbot开发，如有建议请联系墨安QQ:2686014341或者去github上提issue\n"
                       "仓库地址：https://github.com/FXMoAn/astrbot_plugin_pacemanbot")
@@ -55,28 +55,13 @@ class PaceManPlugin(Star):
             self.player_data[userid]['username'] = username
         return self.player_data[userid]
 
-    # 获取PaceMan数据
-    async def fetch_sessionstats(self,username:str):
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response=await client.get(f"{self.baseUrl}/getSessionStats/?name={username}&hours=24&hoursBetween=24")
-            response.raise_for_status()
-            logger.info(f"PaceMan数据: {response.json()}")
-            return response.json()
-
-    async def fetch_nphstats(self,username:str):
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response=await client.get(f"{self.baseUrl}/getNPH/?name={username}&hours=24&hoursBetween=24")
-            response.raise_for_status()
-            logger.info(f"PaceMan数据: {response.json()}")
-            return response.json()
-
     # 将用户添加到列表中
     @filter.command("register")
     async def register(self, event: AstrMessageEvent, username:str):
         try:
             userid = event.get_sender_id()
             # username = self.player_data[userid]['username']
-            data = await self.fetch_sessionstats(username) 
+            data = await fetch_api_data("paceman", "session_stats", username)
             if data['nether']:
                 # 判断是否有数据
                 self.get_user_data(userid, username)
@@ -100,8 +85,8 @@ class PaceManPlugin(Star):
             else:
                 username = name
             
-            sessiondata = await self.fetch_sessionstats(username)
-            nphdata = await self.fetch_nphstats(username)
+            sessiondata = await fetch_api_data("paceman", "session_stats", username)
+            nphdata = await fetch_api_data("paceman", "nph_stats", username)
             data = UserSessionStats(**sessiondata)
             service = Paceman(username,data)
             if data.nether:
@@ -144,6 +129,48 @@ class PaceManPlugin(Star):
         except Exception as e:
             logger.exception("Paceman command error:")
             yield event.plain_result(f"发生未知错误: {e}")
+    
+    @filter.command("run")
+    async def run(self, event: AstrMessageEvent, name = None):
+        if name is None:
+            userid = event.get_sender_id()
+            if userid not in self.player_data.keys():
+                yield event.plain_result("请先使用 '/register 用户名' 命令注册")
+                return
+            username = self.player_data[userid]['username'] 
+        else:
+            username = name
+        runs = await fetch_api_data("paceman", "recent_runs", username)
+        if runs:
+            recent_run=None
+            for run in runs:
+                if run['finish']:
+                    recent_run=RunStats(**run)
+                    break
+            if recent_run:
+                run_result=(f"{username}的最近一次速通数据:\n"
+                        f"下界:{get_time(recent_run.nether)[0]}:{get_time(recent_run.nether)[1]:02d}\n"
+                        f"猪堡:{get_time(recent_run.bastion)[0]}:{get_time(recent_run.bastion)[1]:02d}\n"
+                        f"下要:{get_time(recent_run.fortress)[0]}:{get_time(recent_run.fortress)[1]:02d}\n"
+                        f"盲传:{get_time(recent_run.first_portal)[0]}:{get_time(recent_run.first_portal)[1]:02d}\n"
+                        f"要塞:{get_time(recent_run.stronghold)[0]}:{get_time(recent_run.stronghold)[1]:02d}\n"
+                        f"末地:{get_time(recent_run.end)[0]}:{get_time(recent_run.end)[1]:02d}\n"
+                        f"完成:{get_time(recent_run.finish)[0]}:{get_time(recent_run.finish)[1]:02d}\n")
+                try:
+                    run_service = Run(recent_run, username)
+                    run_service.generate_image()
+                    chain = [
+                        Comp.Plain(f"{username}的最近一次速通数据:"),
+                        Comp.Image.fromFileSystem("/root/astrbot/data/plugins/astrbot_plugin_pacemanbot/result/output.png"),  # 从本地文件目录发送图片
+                    ]
+                    yield event.chain_result(chain)
+                except Exception as e:
+                    logger.exception("Generate image error:")
+                    yield event.plain_result(run_result)
+            else:
+                yield event.plain_result("该玩家最近没有完成的run")
+        else:
+            yield event.plain_result("没有找到该用户。")
 
     #定时返回PaceMan榜单
     async def start(self, event: AstrMessageEvent):
@@ -221,7 +248,7 @@ class PaceManPlugin(Star):
         logger.info(f"消息目标: {self.message_target}")
         for user_data in self.player_data.values():
             try:
-                data = await self.fetch_sessionstats(user_data["username"])
+                data = await fetch_api_data("paceman", "session_stats", user_data["username"])
                 if data:
                     user_data['nether_count'] = data.get('nether', {}).get('count', 0)
                     user_data['gg_count'] = data.get('finish', {}).get('count', 0)
@@ -256,13 +283,6 @@ class PaceManPlugin(Star):
             logger.info(f"消息发送失败，错误原因{e}")
         return result
 
-    #获取Ranked数据
-    async def fetch_rankstats(self,username:str):
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response=await client.get(f"https://api.mcsrranked.com/users/{username}")
-            response.raise_for_status()
-            return response.json()
-
     #查询Ranked个人数据
     @filter.command("rank")
     async def rank(self, event: AstrMessageEvent, name = None):
@@ -275,7 +295,7 @@ class PaceManPlugin(Star):
                 username = self.player_data[userid]['username']
             else:
                 username = name
-            data = await self.fetch_rankstats(username)
+            data = await fetch_api_data("ranked", "user_stats", username)
             if data['status']=='success':
                 user=data['data']['nickname']
                 elorate=data['data']['eloRate']
@@ -315,4 +335,4 @@ class PaceManPlugin(Star):
             yield event.plain_result(f"解析JSON时发生错误: {e}")
         except Exception as e:
             yield event.plain_result(f"发生未知错误: {e}")
-        
+    
