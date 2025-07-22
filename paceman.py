@@ -40,8 +40,8 @@ class Paceman:
         }
         self.stats = {
             "netherstats": f'{self.data.nether.count} {self.data.nether.avg}',
-            "bastionstats": f'{self.data.bastion.count} {self.data.bastion.avg}',
-            "fortressstats": f'{self.data.fortress.count} {self.data.fortress.avg}',
+            "bastionstats": f'{self.data.first_structure.count} {self.data.first_structure.avg}',
+            "fortressstats": f'{self.data.second_structure.count} {self.data.second_structure.avg}',
             "first_portalstats": f'{self.data.first_portal.count} {self.data.first_portal.avg}',
             "strongholdstats": f'{self.data.stronghold.count} {self.data.stronghold.avg}',
             "endstats": f'{self.data.end.count} {self.data.end.avg}',
