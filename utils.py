@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import timedelta
+from datetime import timedelta, datetime
 import httpx
 from astrbot.api import logger
 
@@ -11,7 +11,7 @@ API_ENDPOINTS = {
     "paceman": {
         "session_stats": "/getSessionStats/?name={username}&hours=24&hoursBetween=24",
         "nph_stats": "/getNPH/?name={username}&hours=24&hoursBetween=24",
-        "recent_runs": "/getRecentRuns/?name={username}&hours=240&limit=50"
+        "recent_runs": "/getRecentRuns/?name={username}&hours=99999&limit=500"
     },
     "ranked": {
         "user_stats": "/users/{username}"
@@ -77,3 +77,9 @@ def get_time(seconds):
     minutes = stdtime.seconds // 60
     seconds = stdtime.seconds % 60
     return minutes,seconds
+
+def to_local_time(timestamp):
+    return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+
+if __name__ == "__main__":
+    print(to_local_time(1753241753))
