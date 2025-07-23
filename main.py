@@ -9,7 +9,6 @@ import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.core.message.components import At, Plain
 from datetime import datetime, timedelta
-
 try:
     from .paceman import *
     from .utils import *
@@ -132,45 +131,58 @@ class PaceManPlugin(Star):
     
     @filter.command("run")
     async def run(self, event: AstrMessageEvent, name = None):
-        if name is None:
-            userid = event.get_sender_id()
-            if userid not in self.player_data.keys():
-                yield event.plain_result("请先使用 '/register 用户名' 命令注册")
-                return
-            username = self.player_data[userid]['username'] 
-        else:
-            username = name
-        runs = await fetch_api_data("paceman", "recent_runs", username)
-        if runs:
-            recent_run=None
-            for run in runs:
-                if run['finish']:
-                    recent_run=RunStats(**run)
-                    break
-            if recent_run:
-                run_result=(f"{username}的最近一次速通数据:\n"
-                        f"下界:{get_time(recent_run.nether)[0]}:{get_time(recent_run.nether)[1]:02d}\n"
-                        f"猪堡:{get_time(recent_run.bastion)[0]}:{get_time(recent_run.bastion)[1]:02d}\n"
-                        f"下要:{get_time(recent_run.fortress)[0]}:{get_time(recent_run.fortress)[1]:02d}\n"
-                        f"盲传:{get_time(recent_run.first_portal)[0]}:{get_time(recent_run.first_portal)[1]:02d}\n"
-                        f"要塞:{get_time(recent_run.stronghold)[0]}:{get_time(recent_run.stronghold)[1]:02d}\n"
-                        f"末地:{get_time(recent_run.end)[0]}:{get_time(recent_run.end)[1]:02d}\n"
-                        f"完成:{get_time(recent_run.finish)[0]}:{get_time(recent_run.finish)[1]:02d}\n")
-                try:
-                    run_service = Run(recent_run, username)
-                    run_service.generate_image()
-                    chain = [
-                        Comp.Plain(f"{username}的最近一次速通数据:"),
-                        Comp.Image.fromFileSystem("/root/astrbot/data/plugins/astrbot_plugin_pacemanbot/result/output.png"),  # 从本地文件目录发送图片
-                    ]
-                    yield event.chain_result(chain)
-                except Exception as e:
-                    logger.exception("Generate image error:")
-                    yield event.plain_result(run_result)
+        try:
+            if name is None:
+                userid = event.get_sender_id()
+                if userid not in self.player_data.keys():
+                    yield event.plain_result("请先使用 '/register 用户名' 命令注册")
+                    return
+                username = self.player_data[userid]['username'] 
             else:
-                yield event.plain_result("该玩家最近没有完成的run")
-        else:
-            yield event.plain_result("没有找到该用户。")
+                username = name
+            runs = await fetch_api_data("paceman", "recent_runs", username)
+            if runs:
+                recent_run=None
+                for run in runs:
+                    if run['finish']:
+                        recent_run=RunStats(**run)
+                        break
+                if recent_run:
+                    run_result=(f"{username}的最近一次速通数据:\n"
+                            f"时间:{to_local_time(recent_run.updatedTime)}\n"
+                            f"下界:{get_time(recent_run.nether)[0]}:{get_time(recent_run.nether)[1]:02d}\n"
+                            f"猪堡:{get_time(recent_run.bastion)[0]}:{get_time(recent_run.bastion)[1]:02d}\n"
+                            f"下要:{get_time(recent_run.fortress)[0]}:{get_time(recent_run.fortress)[1]:02d}\n"
+                            f"盲传:{get_time(recent_run.first_portal)[0]}:{get_time(recent_run.first_portal)[1]:02d}\n"
+                            f"要塞:{get_time(recent_run.stronghold)[0]}:{get_time(recent_run.stronghold)[1]:02d}\n"
+                            f"末地:{get_time(recent_run.end)[0]}:{get_time(recent_run.end)[1]:02d}\n"
+                            f"完成:{get_time(recent_run.finish)[0]}:{get_time(recent_run.finish)[1]:02d}\n")
+                    try:
+                        run_service = Run(recent_run, username)
+                        run_service.generate_image()
+                        chain = [
+                            Comp.Plain(f"{username}的最近一次速通数据:"),
+                            Comp.Image.fromFileSystem("/root/astrbot/data/plugins/astrbot_plugin_pacemanbot/result/output.png"),  # 从本地文件目录发送图片
+                        ]
+                        yield event.chain_result(chain)
+                    except Exception as e:
+                        logger.exception("Generate image error:")
+                        yield event.plain_result(run_result)
+                else:
+                    yield event.plain_result("该玩家最近没有完成的run")
+            else:
+                    yield event.plain_result("没有找到该用户。")
+        except httpx.HTTPStatusError as e:
+            yield event.plain_result(f"没有找到该用户")
+        except httpx.TimeoutException:
+            yield event.plain_result("超时，请稍后重试。")
+        except httpx.HTTPError as e:
+            yield event.plain_result(f"发生网络错误: {e}")
+        except json.JSONDecodeError as e:
+            yield event.plain_result(f"解析JSON时发生错误: {e}")
+        except Exception as e:
+            logger.exception("Run command error:")
+            yield event.plain_result(f"发生未知错误: {e}")
 
     #定时返回PaceMan榜单
     async def start(self, event: AstrMessageEvent):

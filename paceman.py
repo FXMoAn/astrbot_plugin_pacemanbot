@@ -4,9 +4,9 @@ from PIL import Image, ImageDraw, ImageFont
 from astrbot.api import logger
 import httpx
 try:
-    from .utils import get_time
+    from .utils import get_time, to_local_time
 except ImportError:
-    from utils import get_time
+    from utils import get_time, to_local_time
 
 class StructureStats(BaseModel):
     count: int
@@ -81,11 +81,14 @@ class Paceman:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
         }
-        with httpx.Client() as client:
-            response = client.get(url, headers=headers, timeout=20.0)
-            if response.status_code == 200:
-                with open(f"{Paceman.imgpath}/{self._uname}.webp", "wb") as f:
-                    f.write(response.content)
+        try:
+            with httpx.Client() as client:
+                response = client.get(url, headers=headers, timeout=20.0)
+                if response.status_code == 200:
+                    with open(f"{Paceman.imgpath}/{self._uname}.webp", "wb") as f:
+                        f.write(response.content)
+        except Exception as e:
+            logger.info(f"获取皮肤失败: {e}")
 
         try:
             image = Image.open(f"{Paceman.imgpath}/{self._uname}.webp").convert("RGBA")
@@ -93,7 +96,7 @@ class Paceman:
             position = (350, 70)
             self.background.paste(image, position, mask=image)
         except Exception as e:
-            logger.info(f"获取皮肤错误: {e}")
+            logger.info(f"皮肤文件不存在: {e}")
 
     def generate_stats(self):
         # 绘制玩家昵称
@@ -156,11 +159,14 @@ class Run:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
         }
-        with httpx.Client() as client:
-            response = client.get(url, headers=headers, timeout=20.0)
-            if response.status_code == 200:
-                with open(f"{Run.imgpath}/{self._uname}.webp", "wb") as f:
-                    f.write(response.content)
+        try:
+            with httpx.Client() as client:
+                response = client.get(url, headers=headers, timeout=20.0)
+                if response.status_code == 200:
+                    with open(f"{Run.imgpath}/{self._uname}.webp", "wb") as f:
+                        f.write(response.content)
+        except Exception as e:
+            logger.info(f"获取皮肤失败: {e}")
 
         try:
             image = Image.open(f"{Run.imgpath}/{self._uname}.webp").convert("RGBA")
@@ -168,7 +174,7 @@ class Run:
             position = (350, 70)
             self.background.paste(image, position, mask=image)
         except Exception as e:
-            logger.info(f"获取皮肤错误: {e}")
+            logger.info(f"皮肤文件不存在: {e}")
         
     def generate_stats(self):
         draw = ImageDraw.Draw(self.background)
@@ -179,6 +185,9 @@ class Run:
         for index, key in enumerate(self.stats):
             text_position = (100, index * 46 + 20)
             draw.text(text_position, self.stats[key], fill="white", font=Paceman.bigfont)
+        # 绘制时间,在底部居中位置
+        text_position = (290 - draw.textlength(to_local_time(self.run.updatedTime), font=Run.smallfont) / 2, 330)
+        draw.text(text_position, to_local_time(self.run.updatedTime), fill="white", font=Paceman.smallfont)
         self.background.save("/root/astrbot/data/plugins/astrbot_plugin_pacemanbot/result/output.png")
 
     def generate_image(self):
