@@ -104,7 +104,7 @@ class PaceManPlugin(Star):
                         )
                 try:
                     if test == 'test':
-                        render_output = await render.render_dynamic(template_name="pacestats_preview")
+                        render_output = await render.render_dynamic(template_name="pacestats")
                         if render_output:
                             yield event.send(MessageChain().file_image(render_output))
                         else:
