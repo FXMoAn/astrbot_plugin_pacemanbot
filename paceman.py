@@ -111,7 +111,10 @@ class Paceman:
         for index, key in enumerate(self.stats):
             text_position = (100, index * 46 + 20)
             draw.text(text_position, self.stats[key], fill="white", font=Paceman.bigfont)
-        self.background.save(os.path.join(os.path.dirname(__file__), "result", "output.png"))
+        # 确保 result 目录存在
+        result_dir = os.path.join(os.path.dirname(__file__), "result")
+        os.makedirs(result_dir, exist_ok=True)
+        self.background.save(os.path.join(result_dir, "output.png"))
         # Paceman.background.save("./result/output.png")
 
     def generate_image(self):
@@ -191,7 +194,10 @@ class Run:
         # 绘制时间,在底部居中位置
         text_position = (290 - draw.textlength(to_local_time(self.run.updatedTime), font=Run.smallfont) / 2, 330)
         draw.text(text_position, to_local_time(self.run.updatedTime), fill="white", font=Paceman.smallfont)
-        self.background.save(os.path.join(os.path.dirname(__file__), "result", "output.png"))
+        # 确保 result 目录存在
+        result_dir = os.path.join(os.path.dirname(__file__), "result")
+        os.makedirs(result_dir, exist_ok=True)
+        self.background.save(os.path.join(result_dir, "output.png"))
 
     def generate_image(self):
         logger.info("Generating image...")
@@ -208,7 +214,7 @@ def load_template(template_name: str) -> str:
         return f.read()
 
 class Renderer:
-    def __init__(self, star_instance: Star, uname: str, data:UserSessionStats):
+    def __init__(self, star_instance: Star, uname: str, data: UserSessionStats):
         self._uname = uname
         self.data = data
         self.star = star_instance
