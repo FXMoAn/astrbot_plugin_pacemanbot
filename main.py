@@ -19,7 +19,7 @@ except ImportError:
 PLAYER_DATA_FILE = "data/astrbot-pacemanbot.json"
 SCHEDULED_TASK_FILE = "data/astrbot-pacemanbot-scheduled_task.json"
 
-@register("pacemanbot", "Mo_An", "支持查询我的世界速通数据", "1.2.2")
+@register("pacemanbot", "Mo_An", "支持查询我的世界速通数据", "1.3.0")
 class PaceManPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
@@ -73,7 +73,7 @@ class PaceManPlugin(Star):
 
     # 查询PaceMan个人数据
     @filter.command("paceman")
-    async def paceman(self, event: AstrMessageEvent, name = None):
+    async def paceman(self, event: AstrMessageEvent, name = None, test = None):
         try:
             if name is None:
                 userid = event.get_sender_id()
@@ -88,6 +88,7 @@ class PaceManPlugin(Star):
             nphdata = await fetch_api_data("paceman", "nph_stats", username)
             data = UserSessionStats(**sessiondata)
             service = Paceman(username,data)
+            render = Renderer(self, username, data)
             if data.nether:
                 sessionresult=(f"{username}\n"
                         f"下界数量:{data.nether.count},平均时间:{data.nether.avg}\n"
@@ -105,6 +106,10 @@ class PaceManPlugin(Star):
                         f"分段统计见下图:"
                         )
                 try:
+                    if test == 'test':
+                        render_output = await render.render_dynamic(template_name="pacestats_preview")
+                        yield event.image_result(render_output)
+                        return
                     service.generate_image()
                     chain = [
                         Comp.Plain(nphresult),

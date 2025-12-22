@@ -1,0 +1,60 @@
+{
+  "pacestats_example": {
+    "说明": "这是 pacestats.html 模板所需的数据结构示例",
+    "uname": "Steve",
+    "stats": {
+      "nether": {
+        "count": 15,
+        "avg": "12:34"
+      },
+      "first_structure": {
+        "count": 12,
+        "avg": "10:20"
+      },
+      "second_structure": {
+        "count": 8,
+        "avg": "8:15"
+      },
+      "first_portal": {
+        "count": 10,
+        "avg": "9:30"
+      },
+      "stronghold": {
+        "count": 5,
+        "avg": "15:45"
+      },
+      "end": {
+        "count": 3,
+        "avg": "18:20"
+      },
+      "finish": {
+        "count": 2,
+        "avg": "20:10"
+      }
+    }
+  },
+  "run_example": {
+    "说明": "这是 run.html 模板所需的数据结构示例",
+    "uname": "Alex",
+    "times": {
+      "nether": "2:15",
+      "bastion": "3:45",
+      "fortress": "5:20",
+      "first_portal": "6:10",
+      "stronghold": "8:30",
+      "end": "10:15",
+      "finish": "12:45"
+    },
+    "update_time": "2024-01-15"
+  },
+  "注意事项": {
+    "图片路径": "模板中使用相对路径 '../' 引用 public 文件夹下的图片",
+    "时间格式": {
+      "pacestats": "avg 字段格式为 '分钟:秒' (例如 '12:34')",
+      "run": "times 字段格式为 '分钟:秒'，秒必须是两位数 (例如 '2:15', '12:05')",
+      "update_time": "格式为 'YYYY-MM-DD' (例如 '2024-01-15')"
+    },
+    "皮肤图片": "使用在线API: https://render.crafty.gg/3d/full/{username}",
+    "字体": "使用 Minecraft 字体，位于 public/1_Minecraft-Regular.otf"
+  }
+}

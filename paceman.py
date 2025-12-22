@@ -2,7 +2,11 @@ from pdb import run
 from pydantic import BaseModel, Field, ValidationError
 from PIL import Image, ImageDraw, ImageFont
 from astrbot.api import logger
+from astrbot.api.all import Star
 import httpx
+from .constant import *
+import os
+import asyncio
 try:
     from .utils import get_time, to_local_time
 except ImportError:
@@ -199,6 +203,77 @@ class Run:
 
         logger.info("Image generated successfully.")
 
-if __name__ == "__main__":
-    
-    ...
+def load_template(template_name: str) -> str:
+    template_path = get_template_path(template_name)
+    with open(template_path, "r", encoding="utf-8") as f:
+        return f.read()
+
+class Renderer:
+    def __init__(self, star_instance: Star, uname: str, data:UserSessionStats):
+        self._uname = uname
+        self.data = data
+        self.star = star_instance
+
+        self.stats = {
+            "uname": self._uname,
+            "stats": {
+                "nether": {
+                    "count": self.data.nether.count,
+                    "avg": self.data.nether.avg
+                },
+                "bastion": {
+                    "count": self.data.first_structure.count,
+                    "avg": self.data.first_structure.avg
+                },
+                "fortress": {
+                    "count": self.data.second_structure.count,
+                    "avg": self.data.second_structure.avg
+                },
+                "first_portal": {
+                    "count": self.data.first_portal.count,
+                    "avg": self.data.first_portal.avg
+                },
+                "stronghold": {
+                    "count": self.data.stronghold.count,
+                    "avg": self.data.stronghold.avg
+                },
+                "end": {
+                    "count": self.data.end.count,
+                    "avg": self.data.end.avg
+                },
+                "finish": {
+                    "count": self.data.finish.count,
+                    "avg": self.data.finish.avg
+                }
+            }
+        }
+
+    async def render_dynamic(self, template_name: str = DEFAULT_TEMPLATE):
+        """
+        将渲染数据字典渲染成最终图片。
+        这是该类的主要入口方法。
+        """
+        options = {"full_page": False, "type": "png", "scale": "device"}
+
+        tmpl = load_template(template_name)
+
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            render_output = None
+            try:
+                render_output = await self.star.html_render(
+                    tmpl=tmpl,
+                    data=self.stats,
+                    return_url=False,
+                    options=options,
+                )
+                if (
+                    render_output
+                    and os.path.exists(render_output)
+                    and os.path.getsize(render_output) > 4096
+                ):
+                    return render_output  # 成功，直接返回渲染结果
+            except Exception as e:
+                logger.error(f"渲染图片失败 (尝试次数: {attempt}): {e}")
+
+            if attempt < MAX_ATTEMPTS:
+                await asyncio.sleep(RETRY_DELAY)

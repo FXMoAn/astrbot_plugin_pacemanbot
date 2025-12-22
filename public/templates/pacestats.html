@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ uname }} - 统计数据</title>
+    <style>
+        @font-face {
+            font-family: 'Minecraft';
+            src: url('../1_Minecraft-Regular.otf') format('opentype');
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Minecraft', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .container {
+            position: relative;
+            width: 1280px;
+            aspect-ratio: 16 / 9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .content {
+            position: relative;
+            z-index: 1;
+            width: 80%;
+            max-width: 960px;
+            aspect-ratio: 4 / 3;
+            display: flex;
+            padding: 20px;
+        }
+        
+        .stats-container {
+            flex: 1;
+            padding-right: 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 15px;
+        }
+        
+        .right-section {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            flex-shrink: 0;
+            width: 200px;
+            padding-left: 20px;
+            margin-right: 20px;
+        }
+        
+        .username {
+            font-size: 24px;
+            color: white;
+            text-align: center;
+            white-space: nowrap;
+            margin-bottom: 20px;
+        }
+        
+        .skin-container {
+            width: 198px;
+            height: 320px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .skin-image {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        
+        .stat-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 6px;
+            height: 40px;
+        }
+        
+        .stat-icon {
+            width: 40px;
+            height: 40px;
+            margin-right: 20px;
+        }
+        
+        .stat-text {
+            font-size: 40px;
+            color: white;
+            line-height: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <img src="../background.webp" alt="背景" class="background">
+        <div class="content">
+            <div class="stats-container">
+                <div class="stat-item">
+                    <img src="../nether.webp" alt="下界" class="stat-icon">
+                    <span class="stat-text">{{ stats.nether.count }} {{ stats.nether.avg }}</span>
+                </div>
+                <div class="stat-item">
+                    <img src="../bastion.webp" alt="堡垒遗迹" class="stat-icon">
+                    <span class="stat-text">{{ stats.first_structure.count }} {{ stats.first_structure.avg }}</span>
+                </div>
+                <div class="stat-item">
+                    <img src="../fortress.webp" alt="下界要塞" class="stat-icon">
+                    <span class="stat-text">{{ stats.second_structure.count }} {{ stats.second_structure.avg }}</span>
+                </div>
+                <div class="stat-item">
+                    <img src="../first_portal.webp" alt="第一个传送门" class="stat-icon">
+                    <span class="stat-text">{{ stats.first_portal.count }} {{ stats.first_portal.avg }}</span>
+                </div>
+                <div class="stat-item">
+                    <img src="../stronghold.webp" alt="要塞" class="stat-icon">
+                    <span class="stat-text">{{ stats.stronghold.count }} {{ stats.stronghold.avg }}</span>
+                </div>
+                <div class="stat-item">
+                    <img src="../end.webp" alt="末地" class="stat-icon">
+                    <span class="stat-text">{{ stats.end.count }} {{ stats.end.avg }}</span>
+                </div>
+                <div class="stat-item">
+                    <img src="../finish.webp" alt="完成" class="stat-icon">
+                    <span class="stat-text">{{ stats.finish.count }} {{ stats.finish.avg }}</span>
+                </div>
+            </div>
+            
+            <div class="right-section">
+                <div class="username">{{ uname }}</div>
+                <div class="skin-container">
+                    <img src="https://render.crafty.gg/3d/full/{{ uname }}" alt="{{ uname }}的皮肤" class="skin-image" onerror="this.style.display='none'">
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
