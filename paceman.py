@@ -46,7 +46,7 @@ class RunStats(BaseModel):
 
 class Paceman:
     # imgpath = './img'
-    imgpath = "/root/astrbot/data/plugins/astrbot_plugin_pacemanbot/img"
+    imgpath = os.path.join(os.path.dirname(__file__), "public")
     # 背景图片
     smallfont = ImageFont.truetype(f"{imgpath}/1_Minecraft-Regular.otf", 24)
     bigfont = ImageFont.truetype(f"{imgpath}/1_Minecraft-Regular.otf", 40)
@@ -112,7 +112,7 @@ class Paceman:
         for index, key in enumerate(self.stats):
             text_position = (100, index * 46 + 20)
             draw.text(text_position, self.stats[key], fill="white", font=Paceman.bigfont)
-        self.background.save("/root/astrbot/data/plugins/astrbot_plugin_pacemanbot/result/output.png")
+        self.background.save(os.path.join(os.path.dirname(__file__), "result", "output.png"))
         # Paceman.background.save("./result/output.png")
 
     def generate_image(self):
@@ -125,7 +125,7 @@ class Paceman:
         logger.info("Image generated successfully.")
 
 class Run:
-    imgpath = "/root/astrbot/data/plugins/astrbot_plugin_pacemanbot/img"
+    imgpath = os.path.join(os.path.dirname(__file__), "public", "img")
     smallfont = ImageFont.truetype(f"{imgpath}/1_Minecraft-Regular.otf", 24)
     bigfont = ImageFont.truetype(f"{imgpath}/1_Minecraft-Regular.otf", 40)
 
@@ -192,7 +192,7 @@ class Run:
         # 绘制时间,在底部居中位置
         text_position = (290 - draw.textlength(to_local_time(self.run.updatedTime), font=Run.smallfont) / 2, 330)
         draw.text(text_position, to_local_time(self.run.updatedTime), fill="white", font=Paceman.smallfont)
-        self.background.save("/root/astrbot/data/plugins/astrbot_plugin_pacemanbot/result/output.png")
+        self.background.save(os.path.join(os.path.dirname(__file__), "result", "output.png"))
 
     def generate_image(self):
         logger.info("Generating image...")

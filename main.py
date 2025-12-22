@@ -113,7 +113,7 @@ class PaceManPlugin(Star):
                     service.generate_image()
                     chain = [
                         Comp.Plain(nphresult),
-                        Comp.Image.fromFileSystem("/root/astrbot/data/plugins/astrbot_plugin_pacemanbot/result/output.png"),  # 从本地文件目录发送图片
+                        Comp.Image.fromFileSystem(os.path.join(os.path.dirname(__file__), "result", "output.png")),  # 从本地文件目录发送图片
                     ]
                     yield event.chain_result(chain)
                 except Exception as e:
@@ -167,7 +167,7 @@ class PaceManPlugin(Star):
                         run_service.generate_image()
                         chain = [
                             Comp.Plain(f"{username}的最近一次速通数据:"),
-                            Comp.Image.fromFileSystem("/root/astrbot/data/plugins/astrbot_plugin_pacemanbot/result/output.png"),  # 从本地文件目录发送图片
+                            Comp.Image.fromFileSystem(os.path.join(os.path.dirname(__file__), "result", "output.png")),  # 从本地文件目录发送图片
                         ]
                         yield event.chain_result(chain)
                     except Exception as e:
