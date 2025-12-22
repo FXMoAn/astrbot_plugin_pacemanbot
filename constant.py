@@ -19,6 +19,6 @@ def get_template_path(type: str) -> str:
     template = CARD_TEMPLATES.get(type, CARD_TEMPLATES[DEFAULT_TEMPLATE])
     return template["path"]
 
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 10
 RETRY_DELAY = 2
 RECENT_DYNAMIC_CACHE = 4

@@ -9,12 +9,9 @@ import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.core.message.components import At, Plain
 from datetime import datetime, timedelta
-try:
-    from .paceman import *
-    from .utils import *
-except ImportError:
-    from paceman import *
-    from utils import *
+from .paceman import *
+from .utils import *
+
 
 PLAYER_DATA_FILE = "data/astrbot-pacemanbot.json"
 SCHEDULED_TASK_FILE = "data/astrbot-pacemanbot-scheduled_task.json"
@@ -108,7 +105,10 @@ class PaceManPlugin(Star):
                 try:
                     if test == 'test':
                         render_output = await render.render_dynamic(template_name="pacestats_preview")
-                        yield event.image_result(render_output)
+                        if render_output:
+                            yield event.send(MessageChain().file_image(render_output))
+                        else:
+                            yield event.plain_result("渲染图片失败")
                         return
                     service.generate_image()
                     chain = [

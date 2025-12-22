@@ -80,6 +80,3 @@ def get_time(seconds):
 
 def to_local_time(timestamp):
     return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
-
-if __name__ == "__main__":
-    print(to_local_time(1753241753))
