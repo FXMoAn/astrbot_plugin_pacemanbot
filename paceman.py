@@ -45,7 +45,6 @@ class RunStats(BaseModel):
     realUpdated:int
 
 class Paceman:
-    # imgpath = './img'
     imgpath = os.path.join(os.path.dirname(__file__), "public")
     # 背景图片
     smallfont = ImageFont.truetype(f"{imgpath}/1_Minecraft-Regular.otf", 24)
@@ -125,7 +124,7 @@ class Paceman:
         logger.info("Image generated successfully.")
 
 class Run:
-    imgpath = os.path.join(os.path.dirname(__file__), "public", "img")
+    imgpath = os.path.join(os.path.dirname(__file__), "public")
     smallfont = ImageFont.truetype(f"{imgpath}/1_Minecraft-Regular.otf", 24)
     bigfont = ImageFont.truetype(f"{imgpath}/1_Minecraft-Regular.otf", 40)
 
