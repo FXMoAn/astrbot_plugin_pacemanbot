@@ -10,6 +10,11 @@ CARD_TEMPLATES: Dict[str, dict] = {
         "name": "pacestats",
         "path": os.path.join(TEMPLATE_DIR, "pacestats.html"),
         "file": "pacestats.html",
+    },
+    "run": {
+        "name": "run",
+        "path": os.path.join(TEMPLATE_DIR, "run.html"),
+        "file": "run.html",
     }
 }
 

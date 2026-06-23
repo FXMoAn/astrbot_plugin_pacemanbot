@@ -7,151 +7,239 @@
     <style>
         @font-face {
             font-family: 'Minecraft';
-            src: url('../1_Minecraft-Regular.otf') format('opentype');
+            src: url('{{ font_uri | safe }}') format('opentype');
         }
-        
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
+            width: 1280px;
+            height: 720px;
+            overflow: hidden;
             font-family: 'Minecraft', monospace;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            color: #fff;
+            background: #111;
         }
-        
+
         .container {
             position: relative;
             width: 1280px;
-            aspect-ratio: 16 / 9;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            height: 720px;
+            overflow: hidden;
         }
-        
+
         .background {
             position: absolute;
-            top: 0;
-            left: 0;
+            inset: 0;
             width: 100%;
             height: 100%;
             object-fit: cover;
+            image-rendering: pixelated;
+            transform: scale(1.03);
         }
-        
+
+        .shade {
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(90deg, rgba(8, 10, 14, 0.54) 0%, rgba(8, 10, 14, 0.36) 55%, rgba(8, 10, 14, 0.16) 100%),
+                linear-gradient(0deg, rgba(8, 10, 14, 0.28) 0%, transparent 32%);
+        }
+
         .content {
             position: relative;
             z-index: 1;
-            width: 80%;
-            max-width: 960px;
-            aspect-ratio: 4 / 3;
-            display: flex;
-            padding: 20px;
+            display: grid;
+            grid-template-columns: 650px 1fr;
+            grid-template-rows: 1fr 110px;
+            gap: 22px 34px;
+            width: 100%;
+            height: 100%;
+            padding: 44px 64px 40px;
         }
-        
-        .stats-container {
-            flex: 1;
-            padding-right: 20px;
+
+        .stats-panel {
             display: flex;
             flex-direction: column;
             justify-content: center;
-            gap: 15px;
+            gap: 13px;
+            min-width: 0;
+            padding-left: 46px;
         }
-        
-        .right-section {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
+
+        .stat-item {
+            display: grid;
+            grid-template-columns: 62px 1fr;
             align-items: center;
-            flex-shrink: 0;
-            width: 200px;
-            padding-left: 20px;
-            margin-right: 20px;
+            height: 58px;
         }
-        
-        .username {
-            font-size: 24px;
-            color: white;
-            text-align: center;
+
+        .stat-icon {
+            width: 52px;
+            height: 52px;
+            object-fit: contain;
+            image-rendering: pixelated;
+            filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.34));
+        }
+
+        .stat-text {
+            font-size: 48px;
+            line-height: 1;
+            color: #f7fafc;
+            text-shadow: 0 4px 0 rgba(0, 0, 0, 0.42);
             white-space: nowrap;
-            margin-bottom: 20px;
         }
-        
-        .skin-container {
-            width: 198px;
-            height: 320px;
+
+        .player-panel {
+            position: relative;
             display: flex;
+            flex-direction: column;
             align-items: center;
+            justify-content: flex-start;
+            min-width: 0;
+            padding-top: 6px;
+        }
+
+        .username {
+            max-width: 360px;
+            margin-bottom: 10px;
+            overflow: hidden;
+            color: #ffffff;
+            font-size: 38px;
+            line-height: 1.15;
+            text-align: center;
+            text-overflow: ellipsis;
+            text-shadow: 0 4px 0 rgba(0, 0, 0, 0.5);
+            white-space: nowrap;
+        }
+
+        .skin-container {
+            width: 300px;
+            height: 462px;
+            display: flex;
+            align-items: flex-start;
             justify-content: center;
         }
-        
+
         .skin-image {
             width: 100%;
             height: 100%;
             object-fit: contain;
+            image-rendering: auto;
+            filter: drop-shadow(0 14px 0 rgba(0, 0, 0, 0.34));
         }
-        
-        .stat-item {
-            display: flex;
+
+        .summary-panel {
+            grid-column: 1 / 3;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0;
             align-items: center;
-            margin-bottom: 6px;
-            height: 40px;
+            height: 104px;
+            padding: 10px 0;
+            background: rgba(10, 12, 16, 0.34);
+            border-top: 2px solid rgba(255, 255, 255, 0.16);
+            border-bottom: 2px solid rgba(0, 0, 0, 0.24);
+            border-radius: 4px;
+            box-shadow: 0 10px 0 rgba(0, 0, 0, 0.14);
         }
-        
-        .stat-icon {
-            width: 40px;
-            height: 40px;
-            margin-right: 20px;
+
+        .summary-item {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-width: 0;
+            height: 76px;
+            padding: 0 24px;
+            border-right: 2px solid rgba(255, 255, 255, 0.14);
         }
-        
-        .stat-text {
-            font-size: 40px;
-            color: white;
-            line-height: 40px;
+
+        .summary-item:last-child {
+            border-right: 0;
+        }
+
+        .summary-label {
+            margin-bottom: 10px;
+            color: rgba(255, 255, 255, 0.82);
+            font-size: 18px;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .summary-value {
+            color: #ffffff;
+            font-size: 44px;
+            line-height: 1;
+            text-shadow: 0 4px 0 rgba(0, 0, 0, 0.36);
+            white-space: nowrap;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <img src="../background.webp" alt="背景" class="background">
+        <img src="{{ background_uri | safe }}" alt="背景" class="background">
+        <div class="shade"></div>
         <div class="content">
-            <div class="stats-container">
+            <div class="stats-panel">
                 <div class="stat-item">
-                    <img src="../nether.webp" alt="下界" class="stat-icon">
+                    <img src="{{ icons.nether | safe }}" alt="下界" class="stat-icon">
                     <span class="stat-text">{{ stats.nether.count }} {{ stats.nether.avg }}</span>
                 </div>
                 <div class="stat-item">
-                    <img src="../bastion.webp" alt="堡垒遗迹" class="stat-icon">
-                    <span class="stat-text">{{ stats.first_structure.count }} {{ stats.first_structure.avg }}</span>
+                    <img src="{{ icons.bastion | safe }}" alt="堡垒遗迹" class="stat-icon">
+                    <span class="stat-text">{{ stats.bastion.count }} {{ stats.bastion.avg }}</span>
                 </div>
                 <div class="stat-item">
-                    <img src="../fortress.webp" alt="下界要塞" class="stat-icon">
-                    <span class="stat-text">{{ stats.second_structure.count }} {{ stats.second_structure.avg }}</span>
+                    <img src="{{ icons.fortress | safe }}" alt="下界要塞" class="stat-icon">
+                    <span class="stat-text">{{ stats.fortress.count }} {{ stats.fortress.avg }}</span>
                 </div>
                 <div class="stat-item">
-                    <img src="../first_portal.webp" alt="第一个传送门" class="stat-icon">
+                    <img src="{{ icons.first_portal | safe }}" alt="第一个传送门" class="stat-icon">
                     <span class="stat-text">{{ stats.first_portal.count }} {{ stats.first_portal.avg }}</span>
                 </div>
                 <div class="stat-item">
-                    <img src="../stronghold.webp" alt="要塞" class="stat-icon">
+                    <img src="{{ icons.stronghold | safe }}" alt="要塞" class="stat-icon">
                     <span class="stat-text">{{ stats.stronghold.count }} {{ stats.stronghold.avg }}</span>
                 </div>
                 <div class="stat-item">
-                    <img src="../end.webp" alt="末地" class="stat-icon">
+                    <img src="{{ icons.end | safe }}" alt="末地" class="stat-icon">
                     <span class="stat-text">{{ stats.end.count }} {{ stats.end.avg }}</span>
                 </div>
                 <div class="stat-item">
-                    <img src="../finish.webp" alt="完成" class="stat-icon">
+                    <img src="{{ icons.finish | safe }}" alt="完成" class="stat-icon">
                     <span class="stat-text">{{ stats.finish.count }} {{ stats.finish.avg }}</span>
                 </div>
             </div>
-            
-            <div class="right-section">
+
+            <div class="player-panel">
                 <div class="username">{{ uname }}</div>
                 <div class="skin-container">
-                    <img src="https://render.crafty.gg/3d/full/{{ uname }}" alt="{{ uname }}的皮肤" class="skin-image" onerror="this.style.display='none'">
+                    {% if skin_uri %}
+                    <img src="{{ skin_uri | safe }}" alt="{{ uname }}的皮肤" class="skin-image">
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="summary-panel">
+                <div class="summary-item">
+                    <div class="summary-label">每小时下界数 NPH</div>
+                    <div class="summary-value">{{ summary.rnph }}</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">每次下界重置数 RPE</div>
+                    <div class="summary-value">{{ summary.rpe }}</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">24小时刷种数</div>
+                    <div class="summary-value">{{ summary.resets }}</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">生涯刷种数</div>
+                    <div class="summary-value">{{ summary.total_resets }}</div>
                 </div>
             </div>
         </div>
