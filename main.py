@@ -11,7 +11,7 @@ from .utils import *
 
 PLAYER_DATA_FILE = "data/astrbot-pacemanbot.json"
 
-@register("pacemanbot", "Mo_An", "支持查询我的世界速通数据", "1.3.0")
+@register("pacemanbot", "Mo_An", "支持查询我的世界速通数据", "1.4.0")
 class PaceManPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
