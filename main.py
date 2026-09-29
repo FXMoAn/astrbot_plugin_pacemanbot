@@ -11,7 +11,7 @@ from .utils import *
 
 PLAYER_DATA_FILE = "data/astrbot-pacemanbot.json"
 
-@register("pacemanbot", "Mo_An", "支持查询我的世界速通数据", "1.4.0")
+@register("pacemanbot", "Mo_An", "支持查询我的世界速通数据", "1.5.0")
 class PaceManPlugin(Star):
     def __init__(self, context: Context):
         super().__init__(context)
@@ -26,6 +26,7 @@ class PaceManPlugin(Star):
                       "/paceman [用户名]-查询24小时PaceMan数据\n"
                       "/run [用户名]-查询最近一次完成的速通数据\n"
                       "/rank [用户名]-查询MCSR Ranked数据\n"
+                      "/ldb [cn]-查询Ranked全球或中国榜单前20名\n"
                       "本插件基于Astrbot开发，如有建议请联系墨安QQ:2686014341或者去github上提issue\n"
                       "仓库地址：https://github.com/FXMoAn/astrbot_plugin_pacemanbot")
         yield event.plain_result(plain_result)
@@ -45,19 +46,51 @@ class PaceManPlugin(Star):
     # 将用户添加到列表中
     @filter.command("register")
     async def register(self, event: AstrMessageEvent, username:str):
+        username = username.strip()
+        if not username:
+            yield event.plain_result("用法：/register 用户名")
+            return
+
+        verified_name = None
+        lookup_failed = False
         try:
-            userid = event.get_sender_id()
-            # username = self.player_data[userid]['username']
             data = await fetch_api_data("paceman", "session_stats", username)
-            if data['nether']:
-                # 判断是否有数据
-                self.get_user_data(userid, username)
-                save_data(PLAYER_DATA_FILE, self.player_data)
-                yield event.plain_result(f"{userid}注册成功，当前游戏名为{username}")
-            else:
-                yield event.plain_result("Paceman没有找到该用户，无法注册")
+            if isinstance(data, dict) and "nether" in data:
+                verified_name = username
+            elif not isinstance(data, dict) or data.get("error") != "Unknown user":
+                lookup_failed = True
         except httpx.HTTPStatusError as e:
-            yield event.plain_result(f"没有找到该用户")
+            if e.response.status_code != 404:
+                lookup_failed = True
+        except (httpx.HTTPError, json.JSONDecodeError):
+            lookup_failed = True
+
+        if verified_name is None:
+            try:
+                data = await fetch_api_data("ranked", "user_stats", username)
+                if isinstance(data, dict) and data.get("status") == "success":
+                    profile = data.get("data")
+                    if isinstance(profile, dict) and profile.get("nickname"):
+                        verified_name = profile["nickname"]
+                    else:
+                        lookup_failed = True
+                elif not isinstance(data, dict) or data.get("status") != "error":
+                    lookup_failed = True
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code != 400:
+                    lookup_failed = True
+            except (httpx.HTTPError, json.JSONDecodeError):
+                lookup_failed = True
+
+        if verified_name is not None:
+            userid = event.get_sender_id()
+            self.get_user_data(userid, verified_name)
+            save_data(PLAYER_DATA_FILE, self.player_data)
+            yield event.plain_result(f"{userid}注册成功，当前游戏名为{verified_name}")
+        elif lookup_failed:
+            yield event.plain_result("用户名校验暂时失败，请稍后重试。")
+        else:
+            yield event.plain_result("PaceMan 和 MCSR Ranked 均未找到该用户名，无法注册。")
 
     # 查询PaceMan个人数据
     @filter.command("paceman")
@@ -189,6 +222,46 @@ class PaceManPlugin(Star):
     async def send_daily_leaderboard(self, message_target):
         logger.info("Paceman scheduled broadcast has been removed.")
         return "定时播报功能已移除"
+
+    @filter.command("ldb")
+    async def ldb(self, event: AstrMessageEvent, region = None):
+        if region is not None and region.lower() != "cn":
+            yield event.plain_result("用法：/ldb [cn]（不填查全球，cn 查中国）")
+            return
+
+        country = "cn" if region is not None else None
+        try:
+            response = await fetch_api_data(
+                "ranked", "leaderboard", params={"country": country} if country else None
+            )
+            if not isinstance(response, dict) or response.get("status") != "success":
+                yield event.plain_result("榜单暂时无法获取，请稍后重试。")
+                return
+
+            leaderboard = response.get("data") or {}
+            season = leaderboard.get("season") or {}
+            users = leaderboard.get("users")
+            if not isinstance(users, list):
+                yield event.plain_result("榜单数据格式异常，请稍后重试。")
+                return
+            if not users:
+                yield event.plain_result("当前榜单暂无玩家数据。")
+                return
+
+            title = "中国" if country else "全球"
+            lines = [f"MCSR Ranked 第{season.get('number', '?')}赛季{title}榜单（前20名）"]
+            for position, player in enumerate(users[:20], start=1):
+                standing = player.get("seasonResult") or {}
+                lines.append(f"{position}. {player['nickname']} - {standing['eloRate']} Elo")
+            yield event.plain_result("\n".join(lines))
+        except httpx.TimeoutException:
+            yield event.plain_result("查询榜单超时，请稍后重试。")
+        except httpx.HTTPError as e:
+            logger.error(f"查询 Ranked 榜单失败: {e}")
+            yield event.plain_result("榜单暂时无法获取，请稍后重试。")
+        except (KeyError, TypeError, AttributeError, json.JSONDecodeError):
+            logger.exception("Ranked 榜单数据格式异常:")
+            yield event.plain_result("榜单数据格式异常，请稍后重试。")
 
     #查询Ranked个人数据
     @filter.command("rank")

@@ -2,6 +2,7 @@ import json
 import os
 from datetime import timedelta, datetime
 import httpx
+from urllib.parse import quote
 from astrbot.api import logger
 
 PACEMAN_BASE_URL="https://paceman.gg/stats/api"
@@ -14,11 +15,18 @@ API_ENDPOINTS = {
         "recent_runs": "/getRecentRuns/?name={username}&hours=99999&limit=500"
     },
     "ranked": {
-        "user_stats": "/users/{username}"
+        "user_stats": "/users/{username}",
+        "leaderboard": "/leaderboard"
     }
 }
 
-async def fetch_api_data(api_type: str, endpoint_type: str, username: str, timeout: float = 10.0):
+async def fetch_api_data(
+    api_type: str,
+    endpoint_type: str,
+    username: str = "",
+    timeout: float = 10.0,
+    params: dict[str, str] | None = None,
+):
     if api_type not in API_ENDPOINTS:
         raise ValueError(f"无效的API类型: {api_type}")
     
@@ -35,13 +43,13 @@ async def fetch_api_data(api_type: str, endpoint_type: str, username: str, timeo
     
     # 完整URL
     endpoint = API_ENDPOINTS[api_type][endpoint_type]
-    url = f"{base_url}{endpoint.format(username=username)}"
+    url = f"{base_url}{endpoint.format(username=quote(username, safe=''))}"
     
     logger.info(f"请求 {api_type} API: {url}")
     
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.get(url)
+            response = await client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
             return data
