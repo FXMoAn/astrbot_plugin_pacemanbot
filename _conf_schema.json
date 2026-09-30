@@ -1,0 +1,91 @@
+{
+  "request_timeout": {
+    "description": "接口请求超时（秒）",
+    "type": "int",
+    "default": 10,
+    "hint": "单次接口请求的超时时间。"
+  },
+  "request_concurrency": {
+    "description": "接口并发数",
+    "type": "int",
+    "default": 6,
+    "hint": "同时向接口发出的请求上限，范围1–20。"
+  },
+  "user_cache_ttl": {
+    "description": "个人数据缓存（秒）",
+    "type": "int",
+    "default": 20,
+    "hint": "个人查询的缓存时间，0关闭缓存。"
+  },
+  "leaderboard_cache_ttl": {
+    "description": "榜单缓存（秒）",
+    "type": "int",
+    "default": 60,
+    "hint": "同一榜单的缓存时间，翻页复用数据，0关闭缓存。"
+  },
+  "render_concurrency": {
+    "description": "图片生成并发数",
+    "type": "int",
+    "default": 2,
+    "hint": "同时生成图片的上限，范围1–8。"
+  },
+  "render_timeout": {
+    "description": "HTML图片等待上限（秒）",
+    "type": "int",
+    "default": 12,
+    "hint": "HTML生成超过此时间后改用备用绘图或文字。"
+  },
+  "render_attempts": {
+    "description": "HTML图片尝试次数",
+    "type": "int",
+    "default": 2,
+    "hint": "临时故障的最大尝试次数，范围1–2。"
+  },
+  "skin_timeout": {
+    "description": "皮肤请求超时（秒）",
+    "type": "int",
+    "default": 3,
+    "hint": "皮肤请求超时后继续生成卡片，范围1–20。"
+  },
+  "skin_cache_ttl": {
+    "description": "皮肤缓存有效期（秒）",
+    "type": "int",
+    "default": 86400,
+    "hint": "默认24小时；到期刷新，0每次刷新。服务故障时可以使用旧缓存。"
+  },
+  "skin_cache_max_files": {
+    "description": "皮肤缓存数量上限",
+    "type": "int",
+    "default": 200,
+    "hint": "超出后清理最旧的缓存，范围1–2000。"
+  },
+  "leaderboard_page_size": {
+    "description": "榜单每页人数",
+    "type": "int",
+    "default": 20,
+    "hint": "每页显示人数，范围1–50。"
+  },
+  "paceman_hours": {
+    "description": "PaceMan默认统计小时数",
+    "type": "int",
+    "default": 24,
+    "hint": "省略小时参数时的统计范围，1–168小时。"
+  },
+  "timezone": {
+    "description": "显示时区",
+    "type": "string",
+    "default": "Asia/Shanghai",
+    "hint": "使用标准时区名称，例如Asia/Shanghai。"
+  },
+  "image_mode": {
+    "description": "数据输出方式",
+    "type": "string",
+    "default": "auto",
+    "options": [
+      "auto",
+      "pil",
+      "text"
+    ],
+    "hint": "auto优先HTML图片，失败使用备用绘图；pil直接备用绘图；text仅文字。"
+  }
+}

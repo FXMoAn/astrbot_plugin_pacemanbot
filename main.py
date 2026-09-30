@@ -1,318 +1,469 @@
 import asyncio
-import httpx
-import json
-from astrbot.api.event import filter, AstrMessageEvent
+import re
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+from pydantic import ValidationError
+
+from astrbot.api import AstrBotConfig, logger
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.message_components import Image, Plain
 from astrbot.api.star import Context, Star, register
-import astrbot.api.message_components as Comp
-from astrbot.api import logger
-from .paceman import *
-from .utils import *
+from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+
+from .paceman import RenderService, RunStats, UserSessionStats
+from .ranked import RankedDataError, format_leaderboard, format_rank, format_recent
+from .storage import BindingStore, normalize_uuid
+from .utils import ApiClient, ApiError, format_time, to_local_time
+
+DEFAULT_CONFIG = {
+    "request_timeout": 10,
+    "request_concurrency": 6,
+    "user_cache_ttl": 20,
+    "leaderboard_cache_ttl": 60,
+    "render_concurrency": 2,
+    "render_timeout": 12,
+    "render_attempts": 2,
+    "skin_timeout": 3,
+    "skin_cache_ttl": 86400,
+    "skin_cache_max_files": 200,
+    "leaderboard_page_size": 20,
+    "paceman_hours": 24,
+    "timezone": "Asia/Shanghai",
+    "image_mode": "auto",
+}
 
 
-PLAYER_DATA_FILE = "data/astrbot-pacemanbot.json"
+class UserInputError(ValueError):
+    pass
 
-@register("pacemanbot", "Mo_An", "支持查询我的世界速通数据", "1.5.0")
+
+def _integer(value, minimum: int, maximum: int, label: str) -> int:
+    try:
+        if isinstance(value, bool) or not re.fullmatch(r"\d+", str(value)):
+            raise ValueError
+        number = int(value)
+    except (ValueError, TypeError):
+        raise UserInputError(f"{label}必须是 {minimum}–{maximum} 的整数。") from None
+    if not minimum <= number <= maximum:
+        raise UserInputError(f"{label}必须是 {minimum}–{maximum} 的整数。")
+    return number
+
+
+def _config(config) -> dict:
+    values = dict(DEFAULT_CONFIG)
+    if config:
+        for key in values:
+            values[key] = config.get(key, values[key])
+    limits = {
+        "request_timeout": (1, 60),
+        "request_concurrency": (1, 20),
+        "user_cache_ttl": (0, 3600),
+        "leaderboard_cache_ttl": (0, 3600),
+        "render_concurrency": (1, 8),
+        "render_timeout": (1, 60),
+        "render_attempts": (1, 2),
+        "skin_timeout": (1, 20),
+        "skin_cache_ttl": (0, 2592000),
+        "skin_cache_max_files": (1, 2000),
+        "leaderboard_page_size": (1, 50),
+        "paceman_hours": (1, 168),
+    }
+    for key, (minimum, maximum) in limits.items():
+        try:
+            values[key] = _integer(values[key], minimum, maximum, key)
+        except UserInputError:
+            logger.warning("Invalid PaceMan config %s; using default.", key)
+            values[key] = DEFAULT_CONFIG[key]
+    try:
+        ZoneInfo(str(values["timezone"]))
+    except (ValueError, KeyError, TypeError):
+        values["timezone"] = DEFAULT_CONFIG["timezone"]
+    if values["image_mode"] not in {"auto", "pil", "text"}:
+        values["image_mode"] = "auto"
+    return values
+
+
+@register("pacemanbot", "Mo_An", "查询 PaceMan 和 MCSR Ranked 速通数据", "1.6.0")
 class PaceManPlugin(Star):
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config: AstrBotConfig | None = None):
         super().__init__(context)
-        self.semaphore = asyncio.Semaphore(10)
-        self.player_data=load_data(PLAYER_DATA_FILE)
-        self.message_target = None
+        self.config = _config(config)
+        data_root = Path(get_astrbot_data_path())
+        self.data_dir = data_root / "plugin_data" / "pacemanbot"
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.api = ApiClient(
+            request_timeout=self.config["request_timeout"],
+            request_concurrency=self.config["request_concurrency"],
+            user_cache_ttl=self.config["user_cache_ttl"],
+            leaderboard_cache_ttl=self.config["leaderboard_cache_ttl"],
+        )
+        self.bindings = BindingStore(
+            self, self.data_dir, data_root / "astrbot-pacemanbot.json"
+        )
+        self.renderer = RenderService(self, self.api, self.data_dir, self.config)
 
-    # 提示用法
-    @filter.command("bothelp")
+    async def initialize(self):
+        await self.bindings.initialize()
+
+    async def terminate(self):
+        try:
+            await self.renderer.aclose()
+        finally:
+            await self.api.aclose()
+
+    @filter.command("bothelp", alias={"pmhelp"})
     async def bothelp(self, event: AstrMessageEvent):
-        plain_result=("可使用的指令有\n/register 用户名-注册\n"
-                      "/paceman [用户名]-查询24小时PaceMan数据\n"
-                      "/run [用户名]-查询最近一次完成的速通数据\n"
-                      "/rank [用户名]-查询MCSR Ranked数据\n"
-                      "/ldb [cn]-查询Ranked全球或中国榜单前20名\n"
-                      "本插件基于Astrbot开发，如有建议请联系墨安QQ:2686014341或者去github上提issue\n"
-                      "仓库地址：https://github.com/FXMoAn/astrbot_plugin_pacemanbot")
-        yield event.plain_result(plain_result)
+        """查看 PaceMan／Ranked 命令、参数和示例；也可使用 /pmhelp。"""
+        yield event.plain_result(
+            "PaceMan / MCSR Ranked 帮助\n"
+            "/register 用户名：绑定玩家，PaceMan 或 Ranked 能查到即可\n"
+            f"/paceman [用户名] [小时]：统计速通数据，默认{self.config['paceman_hours']}小时，范围1–168\n"
+            "/run [用户名]：查询最近一次完成的速通，缺失分段显示 —\n"
+            "/pb [用户名]：查询 PaceMan 个人最好成绩\n"
+            "/rank [用户名] [赛季]：查询排位成绩，省略赛季或填0查当前赛季\n"
+            "/recent [用户名] [条数]：最近排位比赛，默认5场，范围1–10\n"
+            f"/ldb [cn] [页码] [赛季]：全球／中国榜单，每页{self.config['leaderboard_page_size']}名，默认第1页和当前赛季\n"
+            "省略用户名使用已绑定玩家；仅填数字时表示小时／赛季／条数。\n"
+            "示例：/paceman LEC666888 48；/rank LEC666888 11；/recent 5\n"
+            "榜单示例：/ldb 2；/ldb cn 2；/ldb cn 1 11\n"
+            "中国榜按玩家资料 country=cn 筛选；榜单序号与全球排名分别显示。\n"
+            "统计图片保留第一／第二结构对应猪堡／下要的显示口径。\n"
+            "数据有短期缓存；RNPH 来自追踪器统计，数据缺失会注明。\n"
+            "项目：https://github.com/FXMoAn/astrbot_plugin_pacemanbot"
+        )
 
-    def get_user_data(self, userid, username):
-        if userid not in self.player_data:
-            self.player_data[userid] = {
-                "username":username,
-                "nether_count": 0,
-                "gg_count": 0,
-                "gg_avg": "0:00"
-            }
+    async def _identity(self, name: str) -> dict:
+        name = str(name).strip()
+        if not name or not (
+            re.fullmatch(r"[A-Za-z0-9_]{1,32}", name) or normalize_uuid(name)
+        ):
+            raise UserInputError("请输入有效的游戏名、Twitch 名或玩家 UUID。")
+        ranked, paceman = await asyncio.gather(
+            self.api.fetch("ranked", "user_stats", name),
+            self.api.fetch("paceman", "session_nethers", name),
+            return_exceptions=True,
+        )
+        ranked_uuid = (
+            normalize_uuid(ranked.get("uuid")) if isinstance(ranked, dict) else None
+        )
+        paceman_uuid = (
+            normalize_uuid(paceman.get("uuid")) if isinstance(paceman, dict) else None
+        )
+        if ranked_uuid and paceman_uuid and ranked_uuid != paceman_uuid:
+            raise UserInputError("该名称在两个平台对应不同玩家，请改用游戏名或 UUID。")
+        player_uuid = ranked_uuid or paceman_uuid
+        if not player_uuid:
+            failures = [
+                item for item in (ranked, paceman) if isinstance(item, ApiError)
+            ]
+            for failure in failures:
+                if failure.code != "not_found":
+                    raise failure
+            if any(not isinstance(item, ApiError) for item in (ranked, paceman)):
+                raise RankedDataError("Player response has no valid UUID")
+            raise UserInputError("PaceMan 和 MCSR Ranked 均未找到该玩家。")
+        canonical_name = ranked.get("nickname") if isinstance(ranked, dict) else None
+        if not canonical_name:
+            nickname = await self.api.fetch("paceman", "nickname", player_uuid)
+            canonical_name = (
+                nickname.get("name") if isinstance(nickname, dict) else None
+            )
+        if not isinstance(canonical_name, str) or not re.fullmatch(
+            r"[A-Za-z0-9_]{1,16}", canonical_name
+        ):
+            raise RankedDataError("Could not resolve canonical Minecraft nickname")
+        source = "ranked" if ranked_uuid else "paceman"
+        if ranked_uuid and paceman_uuid:
+            source = "paceman+ranked"
+        return {"username": canonical_name, "uuid": player_uuid, "source": source}
+
+    async def _player(self, event, name: str = "") -> dict:
+        if name:
+            return await self._identity(name)
+        binding = await self.bindings.get(event)
+        if not binding:
+            raise UserInputError(
+                "请先使用 /register 用户名 绑定玩家，或在命令后填写用户名。"
+            )
+        if not normalize_uuid(binding.get("uuid")):
+            binding = await self._identity(binding["username"])
+            await self.bindings.put(event, binding)
         else:
-            self.player_data[userid]['username'] = username
-        return self.player_data[userid]
-
-    # 将用户添加到列表中
-    @filter.command("register")
-    async def register(self, event: AstrMessageEvent, username:str):
-        username = username.strip()
-        if not username:
-            yield event.plain_result("用法：/register 用户名")
-            return
-
-        verified_name = None
-        lookup_failed = False
-        try:
-            data = await fetch_api_data("paceman", "session_stats", username)
-            if isinstance(data, dict) and "nether" in data:
-                verified_name = username
-            elif not isinstance(data, dict) or data.get("error") != "Unknown user":
-                lookup_failed = True
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code != 404:
-                lookup_failed = True
-        except (httpx.HTTPError, json.JSONDecodeError):
-            lookup_failed = True
-
-        if verified_name is None:
             try:
-                data = await fetch_api_data("ranked", "user_stats", username)
-                if isinstance(data, dict) and data.get("status") == "success":
-                    profile = data.get("data")
-                    if isinstance(profile, dict) and profile.get("nickname"):
-                        verified_name = profile["nickname"]
-                    else:
-                        lookup_failed = True
-                elif not isinstance(data, dict) or data.get("status") != "error":
-                    lookup_failed = True
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code != 400:
-                    lookup_failed = True
-            except (httpx.HTTPError, json.JSONDecodeError):
-                lookup_failed = True
+                nickname = await self.api.fetch("paceman", "nickname", binding["uuid"])
+                canonical_name = nickname.get("name")
+                if (
+                    isinstance(canonical_name, str)
+                    and re.fullmatch(r"[A-Za-z0-9_]{1,16}", canonical_name)
+                    and canonical_name != binding["username"]
+                ):
+                    binding = dict(binding, username=canonical_name)
+                    await self.bindings.put(event, binding)
+            except ApiError:
+                logger.info("Player name refresh unavailable; using stored nickname.")
+        return binding
 
-        if verified_name is not None:
-            userid = event.get_sender_id()
-            self.get_user_data(userid, verified_name)
-            save_data(PLAYER_DATA_FILE, self.player_data)
-            yield event.plain_result(f"{userid}注册成功，当前游戏名为{verified_name}")
-        elif lookup_failed:
-            yield event.plain_result("用户名校验暂时失败，请稍后重试。")
-        else:
-            yield event.plain_result("PaceMan 和 MCSR Ranked 均未找到该用户名，无法注册。")
+    @staticmethod
+    def _optional_number(name, value, default, minimum, maximum, label):
+        name = str(name or "").strip()
+        if not value and name.isdecimal():
+            name, value = "", name
+        number = (
+            default if value in (None, "") else _integer(value, minimum, maximum, label)
+        )
+        return name, number
 
-    # 查询PaceMan个人数据
+    @staticmethod
+    def _error(error: Exception) -> str:
+        if isinstance(error, (UserInputError, ApiError)):
+            return str(error)
+        if isinstance(error, (ValidationError, RankedDataError)):
+            logger.exception("PaceMan/Ranked response format error.")
+            return "数据格式暂时无法识别，请稍后重试。"
+        logger.exception("PaceMan command failed.")
+        return "查询暂时失败，请稍后重试。"
+
+    @filter.command("register")
+    async def register(self, event: AstrMessageEvent, username: str = ""):
+        """/register 用户名：通过 PaceMan 或 Ranked 校验，保存玩家 UUID 与游戏名。"""
+        try:
+            if not username:
+                raise UserInputError("用法：/register 用户名")
+            binding = await self._identity(username)
+            await self.bindings.put(event, binding)
+            yield event.plain_result(f"绑定成功，当前游戏名：{binding['username']}")
+        except Exception as error:
+            yield event.plain_result(self._error(error))
+
     @filter.command("paceman")
-    async def paceman(self, event: AstrMessageEvent, name = None, test = None):
+    async def paceman(self, event: AstrMessageEvent, name: str = "", hours: str = ""):
+        """/paceman [用户名] [小时]：查询1–168小时统计，默认24小时。"""
         try:
-            if name is None:
-                userid = event.get_sender_id()
-                if userid not in self.player_data.keys():
-                    yield event.plain_result("请先使用 '/register 用户名' 命令注册")
-                    return
-                username = self.player_data[userid]['username']
-            else:
-                username = name
-            
-            sessiondata = await fetch_api_data("paceman", "session_stats", username)
-            nphdata = await fetch_api_data("paceman", "nph_stats", username)
-            data = UserSessionStats(**sessiondata)
-            render = Renderer(self, username, data, nphdata)
-            if data.nether:
-                sessionresult=(f"{username}\n"
-                        f"下界数量:{data.nether.count},平均时间:{data.nether.avg}\n"
-                        f"猪堡数量:{data.first_structure.count},平均时间:{data.first_structure.avg}\n"
-                        f"下要数量:{data.second_structure.count},平均时间:{data.second_structure.avg}\n"
-                        f"盲传数量:{data.first_portal.count},平均时间:{data.first_portal.avg}\n"
-                        f"要塞数量:{data.stronghold.count},平均时间:{data.stronghold.avg}\n"
-                        f"末地数量:{data.end.count},平均时间:{data.end.avg}\n"
-                        f"完成数量:{data.finish.count},平均时间:{data.finish.avg}")
-                try:
-                    render_output = await render.render_dynamic(template_name="pacestats")
-                    if not render_output:
-                        logger.info("HTML render failed, falling back to PIL renderer.")
-                        service = Paceman(username, data)
-                        service.generate_image()
-                        render_output = result_image_path()
-                    chain = [
-                        Comp.Image.fromFileSystem(render_output),
-                    ]
-                    yield event.chain_result(chain)
-                except Exception as e:
-                    logger.exception("Generate image error:")
-                    yield event.plain_result(sessionresult)
+            name, hours = self._optional_number(
+                name, hours, self.config["paceman_hours"], 1, 168, "小时数"
+            )
+            player = await self._player(event, name)
+            params = {"hours": hours, "hoursBetween": hours}
+            session, nph = await asyncio.gather(
+                self.api.fetch(
+                    "paceman", "session_stats", player["username"], params=params
+                ),
+                self.api.fetch(
+                    "paceman", "nph_stats", player["username"], params=params
+                ),
+                return_exceptions=True,
+            )
+            if isinstance(session, BaseException):
+                raise session
+            if isinstance(nph, BaseException):
+                logger.warning("Optional PaceMan NPH query failed: %s", nph)
+                nph = None
+            data = UserSessionStats.model_validate(session)
+            text = self._session_text(player["username"], data, nph, hours)
+            image = await self.renderer.session_image(
+                player["username"], data, nph, skin_id=player["uuid"], hours=hours
+            )
+            yield (
+                event.chain_result([Image.fromBytes(image)])
+                if image
+                else event.plain_result(text)
+            )
+        except Exception as error:
+            yield event.plain_result(self._error(error))
 
-            else:
-                yield event.plain_result("没有找到该用户。")
-        except httpx.HTTPStatusError as e:
-            yield event.plain_result(f"没有找到该用户")
-        except httpx.TimeoutException:
-            yield event.plain_result("超时，请稍后重试。")
-        except httpx.HTTPError as e:
-            yield event.plain_result(f"发生网络错误: {e}")
-        except json.JSONDecodeError as e:
-            yield event.plain_result(f"解析JSON时发生错误: {e}")
-        except Exception as e:
-            logger.exception("Paceman command error:")
-            yield event.plain_result(f"发生未知错误: {e}")
-    
+    @staticmethod
+    def _session_text(username, data, nph, hours):
+        lines = [f"{username} 最近{hours}小时 PaceMan 数据"]
+        for label, field in (
+            ("下界", "nether"),
+            ("猪堡", "first_structure"),
+            ("下要", "second_structure"),
+            ("盲传", "first_portal"),
+            ("要塞", "stronghold"),
+            ("末地", "end"),
+            ("完成", "finish"),
+        ):
+            stats = getattr(data, field)
+            lines.append(
+                f"{label}数量：{stats.count if stats.count is not None else '—'}，平均时间：{stats.avg or '—'}"
+            )
+        if nph is None:
+            lines.append("RNPH：暂不可用")
+        else:
+            lines.append(
+                f"RNPH：{nph.get('rnph') if nph.get('rnph') is not None else '—'}"
+            )
+            lines.append(
+                f"追踪器累计刷种数：{nph.get('totalResets') if nph.get('totalResets') is not None else '—'}"
+            )
+        if data.truncated or (nph and nph.get("truncated")):
+            lines.append("记录较多，统计包含最近部分数据。")
+        return "\n".join(lines)
+
     @filter.command("run")
-    async def run(self, event: AstrMessageEvent, name = None):
+    async def run(self, event: AstrMessageEvent, name: str = ""):
+        """/run [用户名]：查询 PaceMan 最近一次完成记录，省略用户名查本人。"""
         try:
-            if name is None:
-                userid = event.get_sender_id()
-                if userid not in self.player_data.keys():
-                    yield event.plain_result("请先使用 '/register 用户名' 命令注册")
-                    return
-                username = self.player_data[userid]['username'] 
-            else:
-                username = name
-            runs = await fetch_api_data("paceman", "recent_runs", username)
-            if runs:
-                recent_run=None
-                for run in runs:
-                    if run['finish']:
-                        recent_run=RunStats(**run)
-                        break
-                if recent_run:
-                    run_result=(f"{username}的最近一次速通数据:\n"
-                            f"时间:{to_local_time(recent_run.updatedTime)}\n"
-                            f"下界:{get_time(recent_run.nether)[0]}:{get_time(recent_run.nether)[1]:02d}\n"
-                            f"猪堡:{get_time(recent_run.bastion)[0]}:{get_time(recent_run.bastion)[1]:02d}\n"
-                            f"下要:{get_time(recent_run.fortress)[0]}:{get_time(recent_run.fortress)[1]:02d}\n"
-                            f"盲传:{get_time(recent_run.first_portal)[0]}:{get_time(recent_run.first_portal)[1]:02d}\n"
-                            f"要塞:{get_time(recent_run.stronghold)[0]}:{get_time(recent_run.stronghold)[1]:02d}\n"
-                            f"末地:{get_time(recent_run.end)[0]}:{get_time(recent_run.end)[1]:02d}\n"
-                            f"完成:{get_time(recent_run.finish)[0]}:{get_time(recent_run.finish)[1]:02d}\n")
-                    try:
-                        run_service = RunRenderer(self, username, recent_run)
-                        render_output = await run_service.render_dynamic(template_name="run")
-                        if not render_output:
-                            logger.info("HTML render failed, falling back to PIL renderer.")
-                            fallback_service = Run(recent_run, username)
-                            fallback_service.generate_image()
-                            render_output = result_image_path()
-                        chain = [
-                            Comp.Plain(f"{username}的最近一次速通数据:"),
-                            Comp.Image.fromFileSystem(render_output),
-                        ]
-                        yield event.chain_result(chain)
-                    except Exception as e:
-                        logger.exception("Generate image error:")
-                        yield event.plain_result(run_result)
-                else:
-                    yield event.plain_result("该玩家最近没有完成的run")
-            else:
-                    yield event.plain_result("没有找到该用户。")
-        except httpx.HTTPStatusError as e:
-            yield event.plain_result(f"没有找到该用户")
-        except httpx.TimeoutException:
-            yield event.plain_result("超时，请稍后重试。")
-        except httpx.HTTPError as e:
-            yield event.plain_result(f"发生网络错误: {e}")
-        except json.JSONDecodeError as e:
-            yield event.plain_result(f"解析JSON时发生错误: {e}")
-        except Exception as e:
-            logger.exception("Run command error:")
-            yield event.plain_result(f"发生未知错误: {e}")
+            player = await self._player(event, name)
+            payload = await self.api.fetch(
+                "paceman", "latest_completion", player["username"]
+            )
+            if not payload:
+                yield event.plain_result(f"{player['username']} 暂无完成的速通记录。")
+                return
+            data = RunStats.model_validate(payload)
+            text = self._run_text(player["username"], data)
+            image = await self.renderer.run_image(
+                player["username"], data, skin_id=player["uuid"]
+            )
+            yield (
+                event.chain_result(
+                    [
+                        Plain(f"{player['username']} 的最近一次完成记录"),
+                        Image.fromBytes(image),
+                    ]
+                )
+                if image
+                else event.plain_result(text)
+            )
+        except Exception as error:
+            yield event.plain_result(self._error(error))
 
-    async def start(self, event: AstrMessageEvent):
-        logger.info("Paceman scheduled broadcast has been removed.")
+    def _run_text(self, username, data):
+        stamp = data.updatedTime or data.time
+        lines = [
+            f"{username} 的最近一次完成记录",
+            f"日期：{to_local_time(stamp, self.config['timezone']) if stamp else '—'}",
+        ]
+        for label, field in (
+            ("下界", "nether"),
+            ("猪堡", "bastion"),
+            ("下要", "fortress"),
+            ("盲传", "first_portal"),
+            ("要塞", "stronghold"),
+            ("末地", "end"),
+            ("完成", "finish"),
+        ):
+            lines.append(f"{label}：{format_time(getattr(data, field))}")
+        return "\n".join(lines)
 
-    async def settime(self, event:AstrMessageEvent, hour:int, minute:int):
-        yield event.plain_result("定时播报功能已移除")
-
-    async def stop(self, event:AstrMessageEvent):
-        yield event.plain_result("定时播报功能已移除")
-
-    async def send_scheduled_paceman_leaderboard(self,hour,minute,message_target):
-         logger.info("Paceman scheduled broadcast has been removed.")
-    
-    async def send_daily_leaderboard(self, message_target):
-        logger.info("Paceman scheduled broadcast has been removed.")
-        return "定时播报功能已移除"
+    @filter.command("rank")
+    async def rank(self, event: AstrMessageEvent, name: str = "", season: str = ""):
+        """/rank [用户名] [赛季]：查询排位数据；赛季0或省略表示当前赛季。"""
+        try:
+            name, season = self._optional_number(name, season, None, 0, 10000, "赛季")
+            season = season or None
+            player = await self._player(event, name)
+            profile = await self.api.fetch(
+                "ranked",
+                "user_stats",
+                player["uuid"],
+                params={"season": season} if season is not None else None,
+            )
+            yield event.plain_result(format_rank(profile, season=season))
+        except Exception as error:
+            yield event.plain_result(self._error(error))
 
     @filter.command("ldb")
-    async def ldb(self, event: AstrMessageEvent, region = None):
-        if region is not None and region.lower() != "cn":
-            yield event.plain_result("用法：/ldb [cn]（不填查全球，cn 查中国）")
-            return
-
-        country = "cn" if region is not None else None
+    async def ldb(
+        self,
+        event: AstrMessageEvent,
+        region: str = "",
+        page: str = "",
+        season: str = "",
+    ):
+        """/ldb [cn] [页码] [赛季]：分页查询全球／中国排位榜单。"""
         try:
-            response = await fetch_api_data(
-                "ranked", "leaderboard", params={"country": country} if country else None
+            country = "cn" if str(region).lower() == "cn" else None
+            if country:
+                page_value, season_value = page or "1", season
+            else:
+                if season:
+                    raise UserInputError(
+                        "用法：/ldb [cn] [页码] [赛季]，例如 /ldb cn 2 11"
+                    )
+                page_value, season_value = region or "1", page
+            page_number = _integer(page_value, 1, 10000, "页码")
+            season_number = (
+                _integer(season_value, 0, 10000, "赛季") if season_value else None
             )
-            if not isinstance(response, dict) or response.get("status") != "success":
-                yield event.plain_result("榜单暂时无法获取，请稍后重试。")
-                return
+            params = {}
+            if country:
+                params["country"] = country
+            if season_number:
+                params["season"] = season_number
+            payload = await self.api.fetch("ranked", "leaderboard", params=params)
+            yield event.plain_result(
+                format_leaderboard(
+                    payload,
+                    country=country,
+                    page=page_number,
+                    page_size=self.config["leaderboard_page_size"],
+                )
+            )
+        except Exception as error:
+            yield event.plain_result(self._error(error))
 
-            leaderboard = response.get("data") or {}
-            season = leaderboard.get("season") or {}
-            users = leaderboard.get("users")
-            if not isinstance(users, list):
-                yield event.plain_result("榜单数据格式异常，请稍后重试。")
-                return
-            if not users:
-                yield event.plain_result("当前榜单暂无玩家数据。")
-                return
-
-            title = "中国" if country else "全球"
-            lines = [f"MCSR Ranked 第{season.get('number', '?')}赛季{title}榜单（前20名）"]
-            for position, player in enumerate(users[:20], start=1):
-                standing = player.get("seasonResult") or {}
-                lines.append(f"{position}. {player['nickname']} - {standing['eloRate']} Elo")
-            yield event.plain_result("\n".join(lines))
-        except httpx.TimeoutException:
-            yield event.plain_result("查询榜单超时，请稍后重试。")
-        except httpx.HTTPError as e:
-            logger.error(f"查询 Ranked 榜单失败: {e}")
-            yield event.plain_result("榜单暂时无法获取，请稍后重试。")
-        except (KeyError, TypeError, AttributeError, json.JSONDecodeError):
-            logger.exception("Ranked 榜单数据格式异常:")
-            yield event.plain_result("榜单数据格式异常，请稍后重试。")
-
-    #查询Ranked个人数据
-    @filter.command("rank")
-    async def rank(self, event: AstrMessageEvent, name = None):
+    @filter.command("recent")
+    async def recent(self, event: AstrMessageEvent, name: str = "", count: str = ""):
+        """/recent [用户名] [条数]：查询最近1–10场排位，排除分数衰减记录。"""
         try:
-            if name is None:
-                userid = event.get_sender_id()
-                if userid not in self.player_data.keys():
-                    yield event.plain_result("请先使用 '/register 用户名' 命令注册")
-                    return
-                username = self.player_data[userid]['username']
-            else:
-                username = name
-            data = await fetch_api_data("ranked", "user_stats", username)
-            if data['status']=='success':
-                user=data['data']['nickname']
-                elorate=data['data']['eloRate']
-                elorank=data['data']['eloRank']
-                personalbest=data['data']['statistics']['season']['bestTime']['ranked']
-                forfeits=data['data']['statistics']['season']['forfeits']['ranked']
-                playedMatches=data['data']['statistics']['season']['playedMatches']['ranked']
-                completions=data['data']['statistics']['season']['completions']['ranked']
-                completionTime=data['data']['statistics']['season']['completionTime']['ranked']
-                wins=data['data']['statistics']['season']['wins']['ranked']
-                if personalbest is None:
-                    yield event.plain_result(f"{username}本赛季未参加ranked。")
-                else:
-                    forfeits_rate=forfeits/playedMatches
-                    avg_completion_time=completionTime/completions
-                    win_rate=wins/playedMatches
-                    pb_m,pb_s=get_time(personalbest)
-                    avg_m,avg_s=get_time(avg_completion_time)
+            name, count = self._optional_number(name, count, 5, 1, 10, "条数")
+            player = await self._player(event, name)
+            profile, matches = await asyncio.gather(
+                self.api.fetch("ranked", "user_stats", player["uuid"]),
+                self.api.fetch(
+                    "ranked",
+                    "matches",
+                    player["uuid"],
+                    params={
+                        "count": count,
+                        "type": 2,
+                        "sort": "newest",
+                        "excludedecay": "true",
+                    },
+                ),
+            )
+            yield event.plain_result(
+                format_recent(
+                    matches, profile, limit=count, timezone=self.config["timezone"]
+                )
+            )
+        except Exception as error:
+            yield event.plain_result(self._error(error))
 
-                    result = (f"{user}:\n"
-                        f"当前elo:{elorate}\n"
-                        f"当前elo排名:{elorank}\n"
-                        f"赛季PB:{pb_m}分{pb_s}秒\n"
-                        f"赛季胜率:{win_rate*100:.2f}%\n"
-                        f"赛季弃权率:{forfeits_rate*100:.2f}%\n"
-                        f"赛季平均完成时间:{avg_m}分{avg_s}秒")
-                    yield event.plain_result(result)
-            else:
-                yield event.plain_result("没有找到该用户。")
-        except httpx.HTTPStatusError as e:
-            yield event.plain_result(f"没有找到该用户")
-        except httpx.TimeoutException:
-            yield event.plain_result("超时，请稍后重试。")
-        except httpx.HTTPError as e:
-            yield event.plain_result(f"发生网络错误: {e}")
-        except json.JSONDecodeError as e:
-            yield event.plain_result(f"解析JSON时发生错误: {e}")
-        except Exception as e:
-            yield event.plain_result(f"发生未知错误: {e}")
-    
+    @filter.command("pb")
+    async def pb(self, event: AstrMessageEvent, name: str = ""):
+        """/pb [用户名]：查询 PaceMan 个人最好成绩，省略用户名查本人。"""
+        try:
+            player = await self._player(event, name)
+            records = await self.api.fetch(
+                "paceman", "pbs", params={"uuids": player["uuid"]}
+            )
+            if not records:
+                yield event.plain_result(
+                    f"{player['username']} 暂无 PaceMan 个人最好成绩记录。"
+                )
+                return
+            yield event.plain_result(self._pb_text(player["username"], records))
+        except Exception as error:
+            yield event.plain_result(self._error(error))
+
+    def _pb_text(self, username: str, records: list) -> str:
+        lines = [f"{username} 的 PaceMan 个人最好成绩"]
+        for record in records:
+            if not isinstance(record, dict):
+                raise RankedDataError("Invalid PaceMan PB record")
+            duration = record.get("finish")
+            if not isinstance(duration, (int, float)) or duration <= 0:
+                raise RankedDataError("PaceMan PB record has no valid completion time")
+            lines.append(f"PB：{format_time(duration)}")
+            stamp = (
+                record.get("timestamp")
+                or record.get("updatedTime")
+                or record.get("realUpdated")
+            )
+            if stamp:
+                lines.append(f"日期：{to_local_time(stamp, self.config['timezone'])}")
+        return "\n".join(lines)

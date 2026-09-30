@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ uname }} - 统计数据</title>
+    <title>{{ uname }} - {{ title }}</title>
     <style>
         @font-face {
             font-family: 'Minecraft';
@@ -106,7 +106,7 @@
 
         .username {
             max-width: 360px;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             overflow: hidden;
             color: #ffffff;
             font-size: 38px;
@@ -118,8 +118,8 @@
         }
 
         .skin-container {
-            width: 300px;
-            height: 462px;
+            width: 280px;
+            height: 420px;
             display: flex;
             align-items: flex-start;
             justify-content: center;
@@ -172,10 +172,30 @@
 
         .summary-value {
             color: #ffffff;
-            font-size: 44px;
+            font-size: clamp(26px, 3vw, 40px);
             line-height: 1;
             text-shadow: 0 4px 0 rgba(0, 0, 0, 0.36);
             white-space: nowrap;
+        }
+
+        .window-label {
+            margin-bottom: 8px;
+            color: rgba(255, 255, 255, 0.82);
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .data-notice {
+            position: absolute;
+            z-index: 2;
+            bottom: 10px;
+            left: 64px;
+            right: 64px;
+            color: #fff0b0;
+            font-family: 'Minecraft', system-ui, sans-serif;
+            font-size: 16px;
+            line-height: 20px;
+            text-align: center;
         }
     </style>
 </head>
@@ -190,11 +210,11 @@
                     <span class="stat-text">{{ stats.nether.count }} {{ stats.nether.avg }}</span>
                 </div>
                 <div class="stat-item">
-                    <img src="{{ icons.bastion | safe }}" alt="堡垒遗迹" class="stat-icon">
+                    <img src="{{ icons.bastion | safe }}" alt="猪堡（第一结构）" class="stat-icon">
                     <span class="stat-text">{{ stats.bastion.count }} {{ stats.bastion.avg }}</span>
                 </div>
                 <div class="stat-item">
-                    <img src="{{ icons.fortress | safe }}" alt="下界要塞" class="stat-icon">
+                    <img src="{{ icons.fortress | safe }}" alt="下要（第二结构）" class="stat-icon">
                     <span class="stat-text">{{ stats.fortress.count }} {{ stats.fortress.avg }}</span>
                 </div>
                 <div class="stat-item">
@@ -217,6 +237,7 @@
 
             <div class="player-panel">
                 <div class="username">{{ uname }}</div>
+                <div class="window-label">{{ title }}</div>
                 <div class="skin-container">
                     {% if skin_uri %}
                     <img src="{{ skin_uri | safe }}" alt="{{ uname }}的皮肤" class="skin-image">
@@ -226,7 +247,7 @@
 
             <div class="summary-panel">
                 <div class="summary-item">
-                    <div class="summary-label">每小时下界数 NPH</div>
+                    <div class="summary-label">每小时下界数 RNPH</div>
                     <div class="summary-value">{{ summary.rnph }}</div>
                 </div>
                 <div class="summary-item">
@@ -234,15 +255,18 @@
                     <div class="summary-value">{{ summary.rpe }}</div>
                 </div>
                 <div class="summary-item">
-                    <div class="summary-label">24小时刷种数</div>
+                    <div class="summary-label">{{ hours }}小时刷种数</div>
                     <div class="summary-value">{{ summary.resets }}</div>
                 </div>
                 <div class="summary-item">
-                    <div class="summary-label">生涯刷种数</div>
+                    <div class="summary-label">追踪器累计刷种数</div>
                     <div class="summary-value">{{ summary.total_resets }}</div>
                 </div>
             </div>
         </div>
+        {% if notice %}
+        <div class="data-notice" role="status">{{ notice }}</div>
+        {% endif %}
     </div>
 </body>
 </html>

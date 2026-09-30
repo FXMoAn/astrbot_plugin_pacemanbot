@@ -1,29 +1,15 @@
-import os
-from typing import Dict
+from pathlib import Path
 
-CURRENT_DIR = os.path.dirname(__file__)
-ASSETS_DIR = os.path.join(CURRENT_DIR, "public")
-TEMPLATE_DIR = os.path.join(ASSETS_DIR, "templates")
-
-CARD_TEMPLATES: Dict[str, dict] = {
-    "pacestats": {
-        "name": "pacestats",
-        "path": os.path.join(TEMPLATE_DIR, "pacestats.html"),
-        "file": "pacestats.html",
-    },
-    "run": {
-        "name": "run",
-        "path": os.path.join(TEMPLATE_DIR, "run.html"),
-        "file": "run.html",
-    }
+CURRENT_DIR = Path(__file__).resolve().parent
+ASSETS_DIR = CURRENT_DIR / "public"
+TEMPLATE_DIR = ASSETS_DIR / "templates"
+DEFAULT_TEMPLATE = "pacestats"
+CARD_SIZE = (1280, 720)
+CARD_TEMPLATES = {
+    "pacestats": TEMPLATE_DIR / "pacestats.html",
+    "run": TEMPLATE_DIR / "run.html",
 }
 
-DEFAULT_TEMPLATE = "pacestats"
 
-def get_template_path(type: str) -> str:
-    template = CARD_TEMPLATES.get(type, CARD_TEMPLATES[DEFAULT_TEMPLATE])
-    return template["path"]
-
-MAX_ATTEMPTS = 10
-RETRY_DELAY = 2
-RECENT_DYNAMIC_CACHE = 4
+def get_template_path(template_name: str) -> Path:
+    return CARD_TEMPLATES.get(template_name, CARD_TEMPLATES[DEFAULT_TEMPLATE])

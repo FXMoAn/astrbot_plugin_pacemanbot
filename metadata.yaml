@@ -1,6 +1,7 @@
 name: pacemanbot
-desc: 支持查询paceman、rank的数据信息
-help: 输入 /bothelp 查看关键词回复帮助
-version: v1.5.0
+desc: 查询 PaceMan 统计、最近速通与 PB，以及 Ranked 赛季数据、最近比赛和全球或中国榜单
+help: /register 用户名；/paceman [用户名] [小时]；/run [用户名]；/pb [用户名]；/rank [用户名] [赛季]；/recent [用户名] [条数]；/ldb [cn] [页码] [赛季]。输入 /bothelp 或 /pmhelp 查看完整帮助。
+version: v1.6.0
+astrbot_version: ">=4.9.2"
 author: Mo_An
 repo: https://github.com/FXMoAn/astrbot_plugin_pacemanbot

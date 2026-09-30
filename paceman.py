@@ -1,224 +1,113 @@
-import base64
-from pydantic import BaseModel
-from PIL import Image, ImageDraw, ImageFont
-from astrbot.api import logger
-from astrbot.api.all import Star
-import httpx
-from .constant import *
-import os
 import asyncio
-import shutil
-try:
-    from .utils import get_time, to_local_time
-except ImportError:
-    from utils import get_time, to_local_time
+import base64
+import hashlib
+import io
+import math
+import os
+import tempfile
+import time
+from collections.abc import Mapping
+from datetime import datetime
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+from urllib.parse import quote
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+import httpx
+from PIL import Image, ImageDraw, ImageFont, ImageOps
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from astrbot.api import logger
+
+from .constant import ASSETS_DIR, CARD_SIZE, DEFAULT_TEMPLATE, get_template_path
+
 
 class StructureStats(BaseModel):
-    count: int
-    avg: str
+    model_config = ConfigDict(extra="ignore")
+    count: int | None = None
+    avg: str | None = None
+
 
 class UserSessionStats(BaseModel):
-    nether: StructureStats
-    bastion: StructureStats
-    fortress: StructureStats
-    first_structure: StructureStats
-    second_structure: StructureStats
-    first_portal: StructureStats
-    stronghold: StructureStats
-    end: StructureStats
-    finish: StructureStats
+    model_config = ConfigDict(extra="ignore")
+    nether: StructureStats = Field(default_factory=StructureStats)
+    bastion: StructureStats = Field(default_factory=StructureStats)
+    fortress: StructureStats = Field(default_factory=StructureStats)
+    first_structure: StructureStats = Field(default_factory=StructureStats)
+    second_structure: StructureStats = Field(default_factory=StructureStats)
+    first_portal: StructureStats = Field(default_factory=StructureStats)
+    stronghold: StructureStats = Field(default_factory=StructureStats)
+    end: StructureStats = Field(default_factory=StructureStats)
+    finish: StructureStats = Field(default_factory=StructureStats)
+    truncated: bool = False
+
+    @field_validator(
+        "nether",
+        "bastion",
+        "fortress",
+        "first_structure",
+        "second_structure",
+        "first_portal",
+        "stronghold",
+        "end",
+        "finish",
+        mode="before",
+    )
+    @classmethod
+    def empty_segment(cls, value: Any) -> Any:
+        return {} if value is None else value
+
+    @field_validator("truncated", mode="before")
+    @classmethod
+    def empty_truncated(cls, value: Any) -> Any:
+        return False if value is None else value
+
 
 class RunStats(BaseModel):
-    id:int
-    nether:int
-    bastion:int
-    fortress:int
-    first_portal:int
-    stronghold:int
-    end:int
-    finish:int
-    lootBastion:int
-    obtainObsidian:int
-    obtainCryingObsidian:int
-    obtainRod:int
-    time:int
-    updatedTime:int
-    realUpdated:int
+    model_config = ConfigDict(extra="ignore")
+    id: int | None = None
+    nether: int | None = None
+    bastion: int | None = None
+    fortress: int | None = None
+    first_portal: int | None = None
+    stronghold: int | None = None
+    end: int | None = None
+    finish: int | None = None
+    lootBastion: int | None = None
+    obtainObsidian: int | None = None
+    obtainCryingObsidian: int | None = None
+    obtainRod: int | None = None
+    time: int | None = None
+    updatedTime: int | None = None
+    realUpdated: int | None = None
 
-class Paceman:
-    imgpath = os.path.join(os.path.dirname(__file__), "public")
-    # 背景图片
-    smallfont = ImageFont.truetype(f"{imgpath}/1_Minecraft-Regular.otf", 24)
-    bigfont = ImageFont.truetype(f"{imgpath}/1_Minecraft-Regular.otf", 40)
 
-    def __init__(self,uname: str, data:UserSessionStats):
-        self._uname = uname
-        self.data = data
-        self.background = Image.open(f"{Paceman.imgpath}/background.webp").convert("RGBA")
-        self.icons = {
-            "nether": Image.open(f"{Paceman.imgpath}/nether.webp").convert("RGBA"),
-            "bastion": Image.open(f"{Paceman.imgpath}/bastion.webp").convert("RGBA"),
-            "fortress": Image.open(f"{Paceman.imgpath}/fortress.webp").convert("RGBA"),
-            "first_portal": Image.open(f"{Paceman.imgpath}/first_portal.webp").convert("RGBA"),
-            "stronghold": Image.open(f"{Paceman.imgpath}/stronghold.webp").convert("RGBA"),
-            "end": Image.open(f"{Paceman.imgpath}/end.webp").convert("RGBA"),
-            "finish": Image.open(f"{Paceman.imgpath}/finish.webp").convert("RGBA"),
-        }
-        self.stats = {
-            "netherstats": f'{self.data.nether.count} {self.data.nether.avg}',
-            "bastionstats": f'{self.data.first_structure.count} {self.data.first_structure.avg}',
-            "fortressstats": f'{self.data.second_structure.count} {self.data.second_structure.avg}',
-            "first_portalstats": f'{self.data.first_portal.count} {self.data.first_portal.avg}',
-            "strongholdstats": f'{self.data.stronghold.count} {self.data.stronghold.avg}',
-            "endstats": f'{self.data.end.count} {self.data.end.avg}',
-            "finishstats": f'{self.data.finish.count} {self.data.finish.avg}'
-        }
+SEGMENTS = (
+    "nether",
+    "bastion",
+    "fortress",
+    "first_portal",
+    "stronghold",
+    "end",
+    "finish",
+)
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
-    def generate_background_image(self):
-        for index, key in enumerate(self.icons):
-            pic = self.icons[key].resize((40, 40))
-            position = (20, index * 46 + 20)
-            self.background.paste(pic, position, mask=pic)
 
-    def generate_skin(self):
-        url = f"https://render.crafty.gg/3d/full/{self._uname}"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
-        }
-        try:
-            with httpx.Client() as client:
-                response = client.get(url, headers=headers, timeout=20.0)
-                if response.status_code == 200:
-                    with open(f"{Paceman.imgpath}/{self._uname}.webp", "wb") as f:
-                        f.write(response.content)
-        except Exception as e:
-            logger.info(f"获取皮肤失败: {e}")
-
-        try:
-            image = Image.open(f"{Paceman.imgpath}/{self._uname}.webp").convert("RGBA")
-            image = image.resize((158, 256))
-            position = (350, 70)
-            self.background.paste(image, position, mask=image)
-        except Exception as e:
-            logger.info(f"皮肤文件不存在: {e}")
-
-    def generate_stats(self):
-        # 绘制玩家昵称
-        draw = ImageDraw.Draw(self.background)
-        text_width = draw.textlength(self._uname, font=Paceman.smallfont)
-        x = 430 - text_width / 2
-        draw.text((x, 30), self._uname, fill="white", font=Paceman.smallfont)
-        # 绘制数据
-        for index, key in enumerate(self.stats):
-            text_position = (100, index * 46 + 20)
-            draw.text(text_position, self.stats[key], fill="white", font=Paceman.bigfont)
-        # 确保 result 目录存在
-        result_dir = os.path.join(os.path.dirname(__file__), "result")
-        os.makedirs(result_dir, exist_ok=True)
-        self.background.save(os.path.join(result_dir, "output.png"))
-        # Paceman.background.save("./result/output.png")
-
-    def generate_image(self):
-        logger.info("Generating image...")
-
-        self.generate_background_image()
-        self.generate_skin()
-        self.generate_stats()
-
-        logger.info("Image generated successfully.")
-
-class Run:
-    imgpath = os.path.join(os.path.dirname(__file__), "public")
-    smallfont = ImageFont.truetype(f"{imgpath}/1_Minecraft-Regular.otf", 24)
-    bigfont = ImageFont.truetype(f"{imgpath}/1_Minecraft-Regular.otf", 40)
-
-    def __init__(self, run:RunStats, uname:str):
-        self._uname = uname
-        self.run = run
-        self.background = Image.open(f"{Paceman.imgpath}/background.webp").convert("RGBA")
-        self.icons = {
-            "nether": Image.open(f"{Paceman.imgpath}/nether.webp").convert("RGBA"),
-            "bastion": Image.open(f"{Paceman.imgpath}/bastion.webp").convert("RGBA"),
-            "fortress": Image.open(f"{Paceman.imgpath}/fortress.webp").convert("RGBA"),
-            "first_portal": Image.open(f"{Paceman.imgpath}/first_portal.webp").convert("RGBA"),
-            "stronghold": Image.open(f"{Paceman.imgpath}/stronghold.webp").convert("RGBA"),
-            "end": Image.open(f"{Paceman.imgpath}/end.webp").convert("RGBA"),
-            "finish": Image.open(f"{Paceman.imgpath}/finish.webp").convert("RGBA"),
-        }
-        self.stats = {
-            "netherstats": f'{get_time(self.run.nether)[0]}:{get_time(self.run.nether)[1]:02d}',
-            "bastionstats": f'{get_time(self.run.bastion)[0]}:{get_time(self.run.bastion)[1]:02d}',
-            "fortressstats": f'{get_time(self.run.fortress)[0]}:{get_time(self.run.fortress)[1]:02d}',
-            "first_portalstats": f'{get_time(self.run.first_portal)[0]}:{get_time(self.run.first_portal)[1]:02d}',
-            "strongholdstats": f'{get_time(self.run.stronghold)[0]}:{get_time(self.run.stronghold)[1]:02d}',
-            "endstats": f'{get_time(self.run.end)[0]}:{get_time(self.run.end)[1]:02d}',
-            "finishstats": f'{get_time(self.run.finish)[0]}:{get_time(self.run.finish)[1]:02d}',
-        }
-
-    def generate_background_image(self):
-        for index, key in enumerate(self.icons):
-            pic = self.icons[key].resize((40, 40))
-            position = (20, index * 46 + 20)
-            self.background.paste(pic, position, mask=pic)
-
-    def generate_skin(self):
-        url = f"https://render.crafty.gg/3d/full/{self._uname}"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
-        }
-        try:
-            with httpx.Client() as client:
-                response = client.get(url, headers=headers, timeout=20.0)
-                if response.status_code == 200:
-                    with open(f"{Run.imgpath}/{self._uname}.webp", "wb") as f:
-                        f.write(response.content)
-        except Exception as e:
-            logger.info(f"获取皮肤失败: {e}")
-
-        try:
-            image = Image.open(f"{Run.imgpath}/{self._uname}.webp").convert("RGBA")
-            image = image.resize((158, 256))
-            position = (350, 70)
-            self.background.paste(image, position, mask=image)
-        except Exception as e:
-            logger.info(f"皮肤文件不存在: {e}")
-        
-    def generate_stats(self):
-        draw = ImageDraw.Draw(self.background)
-        text_width = draw.textlength(self._uname, font=Run.smallfont)
-        x = 430 - text_width / 2
-        draw.text((x, 30), self._uname, fill="white", font=Run.smallfont)
-        # 绘制数据
-        for index, key in enumerate(self.stats):
-            text_position = (100, index * 46 + 20)
-            draw.text(text_position, self.stats[key], fill="white", font=Paceman.bigfont)
-        # 绘制时间,在底部居中位置
-        text_position = (290 - draw.textlength(to_local_time(self.run.updatedTime), font=Run.smallfont) / 2, 330)
-        draw.text(text_position, to_local_time(self.run.updatedTime), fill="white", font=Paceman.smallfont)
-        # 确保 result 目录存在
-        result_dir = os.path.join(os.path.dirname(__file__), "result")
-        os.makedirs(result_dir, exist_ok=True)
-        self.background.save(os.path.join(result_dir, "output.png"))
-
-    def generate_image(self):
-        logger.info("Generating image...")
-
-        self.generate_background_image()
-        self.generate_skin()
-        self.generate_stats()
-
-        logger.info("Image generated successfully.")
-
+@lru_cache(maxsize=4)
 def load_template(template_name: str) -> str:
-    template_path = get_template_path(template_name)
-    with open(template_path, "r", encoding="utf-8") as f:
-        return f.read()
+    return get_template_path(template_name).read_text(encoding="utf-8")
 
+
+@lru_cache(maxsize=16)
 def asset_data_uri(filename: str, mime_type: str) -> str:
-    asset_path = os.path.join(ASSETS_DIR, filename)
-    with open(asset_path, "rb") as f:
-        encoded = base64.b64encode(f.read()).decode("ascii")
-    return f"data:{mime_type};base64,{encoded}"
+    return bytes_data_uri((ASSETS_DIR / filename).read_bytes(), mime_type)
+
+
+def bytes_data_uri(content: bytes, mime_type: str) -> str:
+    return f"data:{mime_type};base64,{base64.b64encode(content).decode('ascii')}"
+
 
 def image_mime_type(content: bytes) -> str | None:
     if content.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -229,213 +118,489 @@ def image_mime_type(content: bytes) -> str | None:
         return "image/webp"
     return None
 
-def bytes_data_uri(content: bytes, mime_type: str) -> str:
-    encoded = base64.b64encode(content).decode("ascii")
-    return f"data:{mime_type};base64,{encoded}"
 
-async def fetch_skin_data_uri(uname: str) -> str:
-    skin_path = os.path.join(ASSETS_DIR, f"{uname}.webp")
-    if os.path.exists(skin_path):
-        with open(skin_path, "rb") as f:
-            cached_content = f.read()
-        cached_mime_type = image_mime_type(cached_content)
-        if cached_mime_type:
-            return bytes_data_uri(cached_content, cached_mime_type)
-        try:
-            os.remove(skin_path)
-        except OSError as e:
-            logger.info(f"删除无效皮肤缓存失败: {e}")
+def validate_image(content: bytes, *, card: bool = False) -> bytes:
+    if not content or len(content) > MAX_IMAGE_BYTES or not image_mime_type(content):
+        raise ValueError("图片格式或大小无效")
+    with Image.open(io.BytesIO(content)) as image:
+        width, height = image.size
+        if not (1 <= width <= 4096 and 1 <= height <= 4096):
+            raise ValueError("图片尺寸无效")
+        if card and (
+            width < CARD_SIZE[0] // 2
+            or height < CARD_SIZE[1] // 2
+            or abs(width / height - CARD_SIZE[0] / CARD_SIZE[1]) > 0.05
+        ):
+            raise ValueError("渲染图片未包含完整卡片")
+        image.verify()
+    with Image.open(io.BytesIO(content)) as image:
+        image.load()
+    return content
 
-    url = f"https://render.crafty.gg/3d/full/{uname}"
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/58.0.3029.110 Safari/537.3"
+
+@lru_cache(maxsize=16)
+def _asset_image(filename: str) -> Image.Image:
+    with Image.open(ASSETS_DIR / filename) as image:
+        return image.convert("RGBA")
+
+
+@lru_cache(maxsize=8)
+def _font(size: int) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(str(ASSETS_DIR / "1_Minecraft-Regular.otf"), size)
+
+
+def _display(value: Any, *, precision: int = 2) -> str:
+    if value is None:
+        return "—"
+    if isinstance(value, float):
+        return f"{value:.{precision}f}" if math.isfinite(value) else "—"
+    return str(value)
+
+
+def _format_time(milliseconds: int | None) -> str:
+    if milliseconds is None or milliseconds < 0:
+        return "—"
+    minutes, seconds = divmod(milliseconds // 1000, 60)
+    return f"{minutes}:{seconds:02d}"
+
+
+def _format_date(timestamp: int | None, timezone: str) -> str:
+    if timestamp is None:
+        return "未知日期"
+    try:
+        return datetime.fromtimestamp(timestamp, ZoneInfo(timezone)).strftime(
+            "%Y-%m-%d"
         )
-    }
-    try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
-            mime_type = image_mime_type(response.content)
-            if not mime_type:
-                logger.info("获取皮肤失败: 响应不是有效图片")
-                return ""
-            with open(skin_path, "wb") as f:
-                f.write(response.content)
-            return bytes_data_uri(response.content, mime_type)
-    except Exception as e:
-        logger.info(f"获取皮肤失败: {e}")
-        return ""
+    except (ValueError, OverflowError, OSError):
+        return "未知日期"
 
-def result_image_path() -> str:
-    result_dir = os.path.join(os.path.dirname(__file__), "result")
-    os.makedirs(result_dir, exist_ok=True)
-    return os.path.join(result_dir, "output.png")
 
-def copy_render_output(render_output: str) -> str:
-    output_path = result_image_path()
-    if os.path.abspath(render_output) == os.path.abspath(output_path):
-        with open(output_path, "rb") as f:
-            if not image_mime_type(f.read(16)):
-                raise RuntimeError("渲染结果不是有效图片")
-        return output_path
-    try:
-        with Image.open(render_output) as image:
-            image.convert("RGBA").save(output_path, format="PNG", optimize=True)
-    except Exception as e:
-        with open(render_output, "rb") as f:
-            content_start = f.read(512)
-        if not image_mime_type(content_start):
-            raise RuntimeError("渲染服务返回了非图片内容") from e
-        logger.info(f"转换渲染图片为 PNG 失败，直接复制原图片: {e}")
-        shutil.copyfile(render_output, output_path)
-    return output_path
-
-def common_template_data(uname: str) -> dict:
+def common_template_data(uname: str) -> dict[str, Any]:
     return {
         "uname": uname,
         "font_uri": asset_data_uri("1_Minecraft-Regular.otf", "font/otf"),
         "background_uri": asset_data_uri("background.webp", "image/webp"),
         "skin_uri": "",
-        "icons": {
-            "nether": asset_data_uri("nether.webp", "image/webp"),
-            "bastion": asset_data_uri("bastion.webp", "image/webp"),
-            "fortress": asset_data_uri("fortress.webp", "image/webp"),
-            "first_portal": asset_data_uri("first_portal.webp", "image/webp"),
-            "stronghold": asset_data_uri("stronghold.webp", "image/webp"),
-            "end": asset_data_uri("end.webp", "image/webp"),
-            "finish": asset_data_uri("finish.webp", "image/webp"),
-        },
+        "icons": {key: asset_data_uri(f"{key}.webp", "image/webp") for key in SEGMENTS},
     }
 
-class Renderer:
+
+def session_template_data(
+    data: UserSessionStats, nph_stats: Mapping | None, hours: int = 24
+) -> dict[str, Any]:
+    # Keep the user's first/second structure convention in every renderer.
+    stages = {
+        "nether": data.nether,
+        "bastion": data.first_structure,
+        "fortress": data.second_structure,
+        "first_portal": data.first_portal,
+        "stronghold": data.stronghold,
+        "end": data.end,
+        "finish": data.finish,
+    }
+    nph = nph_stats if isinstance(nph_stats, Mapping) else {}
+    warnings = []
+    if data.truncated or nph.get("truncated"):
+        warnings.append("记录较多，统计数据可能不完整")
+    if not any(
+        nph.get(key) is not None for key in ("rnph", "rpe", "resets", "totalResets")
+    ):
+        warnings.append("NPH 数据暂不可用，— 表示缺失")
+    return {
+        "hours": hours,
+        "title": f"最近{hours}小时统计",
+        "stats": {
+            key: {"count": _display(stage.count), "avg": _display(stage.avg)}
+            for key, stage in stages.items()
+        },
+        "summary": {
+            "rnph": _display(nph.get("rnph")),
+            "rpe": _display(nph.get("rpe")),
+            "resets": _display(nph.get("resets")),
+            "total_resets": _display(nph.get("totalResets")),
+        },
+        "notice": " · ".join(warnings),
+        "truncated": data.truncated or bool(nph.get("truncated")),
+        "nph_missing": not nph
+        or all(
+            nph.get(key) is None for key in ("rnph", "rpe", "resets", "totalResets")
+        ),
+    }
+
+
+def run_template_data(run: RunStats, timezone: str) -> dict[str, Any]:
+    return {
+        "times": {key: _format_time(getattr(run, key)) for key in SEGMENTS},
+        "update_time": _format_date(run.updatedTime or run.time, timezone),
+    }
+
+
+def _pil_image(
+    uname: str, card_data: dict[str, Any], skin: bytes | None, *, session: bool
+) -> bytes:
+    background = _asset_image("background.webp").resize(CARD_SIZE)
+    background.alpha_composite(Image.new("RGBA", CARD_SIZE, (0, 0, 0, 88)))
+    draw = ImageDraw.Draw(background)
+    for index, key in enumerate(SEGMENTS):
+        y = 62 + index * 72
+        icon = _asset_image(f"{key}.webp").resize((52, 52))
+        background.alpha_composite(icon, (106, y))
+        if session:
+            stage = card_data["stats"][key]
+            text = f"{stage['count']} {stage['avg']}"
+        else:
+            text = card_data["times"][key]
+        draw.text((184, y + 2), text, fill="white", font=_font(48))
+
+    display_name = uname
+    while draw.textlength(display_name, font=_font(36)) > 330 and len(display_name) > 1:
+        display_name = display_name[:-2] + "…"
+    draw.text((1030, 50), display_name, fill="white", font=_font(36), anchor="mt")
+    if session:
+        draw.text(
+            (1030, 90),
+            f"Last {card_data['hours']} hours",
+            fill="white",
+            font=_font(18),
+            anchor="mt",
+        )
+    if skin:
+        with Image.open(io.BytesIO(skin)) as image:
+            rendered_skin = ImageOps.contain(image.convert("RGBA"), (280, 440))
+            background.alpha_composite(
+                rendered_skin, (1030 - rendered_skin.width // 2, 124)
+            )
+
+    if session:
+        draw.rectangle((62, 586, 1218, 690), fill=(10, 12, 16, 180))
+        labels = (
+            ("RNPH", "rnph"),
+            ("RPE", "rpe"),
+            (f"{card_data['hours']}h resets", "resets"),
+            ("Tracker total", "total_resets"),
+        )
+        for index, (label, key) in enumerate(labels):
+            x = 88 + index * 287
+            draw.text((x, 598), label, fill="white", font=_font(18))
+            value = card_data["summary"][key]
+            value_size = 36 if len(value) <= 10 else 24
+            draw.text((x, 630), value, fill="white", font=_font(value_size))
+        notices = []
+        if card_data["truncated"]:
+            notices.append("PARTIAL DATA")
+        if card_data["nph_missing"]:
+            notices.append("NPH UNAVAILABLE")
+        if notices:
+            draw.text(
+                (640, 699),
+                " / ".join(notices),
+                fill="#fff0b0",
+                font=_font(14),
+                anchor="mt",
+            )
+    else:
+        # The bitmap fallback uses Latin labels when a CJK system font is unavailable.
+        date = card_data["update_time"]
+        draw.text(
+            (640, 658),
+            date if date != "未知日期" else "Unknown date",
+            fill="white",
+            font=_font(26),
+            anchor="mt",
+        )
+    output = io.BytesIO()
+    background.convert("RGB").save(output, format="PNG")
+    return output.getvalue()
+
+
+class Paceman:
     def __init__(
         self,
-        star_instance: Star,
         uname: str,
         data: UserSessionStats,
-        nph_stats: dict | None = None,
+        nph_stats: Mapping | None = None,
+        hours: int = 24,
     ):
-        self._uname = uname
+        self.uname = uname
         self.data = data
-        self.star = star_instance
-        self.nph_stats = nph_stats or {}
+        self.nph_stats = nph_stats
+        self.hours = hours
 
-        self.render_data = common_template_data(self._uname) | {
-            "stats": {
-                "nether": {
-                    "count": self.data.nether.count,
-                    "avg": self.data.nether.avg
-                },
-                "bastion": {
-                    "count": self.data.first_structure.count,
-                    "avg": self.data.first_structure.avg
-                },
-                "fortress": {
-                    "count": self.data.second_structure.count,
-                    "avg": self.data.second_structure.avg
-                },
-                "first_portal": {
-                    "count": self.data.first_portal.count,
-                    "avg": self.data.first_portal.avg
-                },
-                "stronghold": {
-                    "count": self.data.stronghold.count,
-                    "avg": self.data.stronghold.avg
-                },
-                "end": {
-                    "count": self.data.end.count,
-                    "avg": self.data.end.avg
-                },
-                "finish": {
-                    "count": self.data.finish.count,
-                    "avg": self.data.finish.avg
-                }
-            },
-            "summary": {
-                "rnph": self.nph_stats.get("rnph", 0),
-                "rpe": self.nph_stats.get("rpe", 0),
-                "resets": self.nph_stats.get("resets", 0),
-                "total_resets": self.nph_stats.get("totalResets", 0),
-            },
-        }
+    def generate_image(self, skin: bytes | None = None) -> bytes:
+        return _pil_image(
+            self.uname,
+            session_template_data(self.data, self.nph_stats, self.hours),
+            skin,
+            session=True,
+        )
 
-    async def render_dynamic(self, template_name: str = DEFAULT_TEMPLATE):
-        """
-        将渲染数据字典渲染成最终图片。
-        这是该类的主要入口方法。
-        """
-        options = {"full_page": False, "type": "png", "scale": "device"}
 
-        tmpl = load_template(template_name)
-        self.render_data["skin_uri"] = await fetch_skin_data_uri(self._uname)
+class Run:
+    def __init__(self, run: RunStats, uname: str, timezone: str = "Asia/Shanghai"):
+        self.run = run
+        self.uname = uname
+        self.timezone = timezone
 
-        for attempt in range(1, MAX_ATTEMPTS + 1):
-            render_output = None
+    def generate_image(self, skin: bytes | None = None) -> bytes:
+        return _pil_image(
+            self.uname, run_template_data(self.run, self.timezone), skin, session=False
+        )
+
+
+def _number(
+    config: Mapping, key: str, default: float, minimum: float, maximum: float
+) -> float:
+    try:
+        value = float(config.get(key, default))
+        return min(maximum, max(minimum, value)) if math.isfinite(value) else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _temporary_render_error(error: Exception) -> bool:
+    if isinstance(
+        error,
+        (
+            httpx.TimeoutException,
+            httpx.NetworkError,
+            TimeoutError,
+            asyncio.TimeoutError,
+        ),
+    ):
+        return True
+    message = str(error).lower()
+    return any(
+        token in message
+        for token in (
+            "timed out",
+            "timeout",
+            "connection",
+            "http 429",
+            "http 502",
+            "http 503",
+            "http 504",
+        )
+    )
+
+
+class RenderService:
+    def __init__(self, star: Any, api_client: Any, data_dir: Path, config: Mapping):
+        self.star = star
+        self.api = api_client
+        self.skin_dir = Path(data_dir) / "skins"
+        self.timeout = _number(config, "render_timeout", 12, 1, 60)
+        self.attempts = int(_number(config, "render_attempts", 2, 1, 2))
+        self.skin_timeout = _number(config, "skin_timeout", 3, 0.1, 20)
+        self.skin_ttl = _number(config, "skin_cache_ttl", 86400, 0, 2592000)
+        self.skin_max_files = int(_number(config, "skin_cache_max_files", 200, 1, 2000))
+        self.semaphore = asyncio.Semaphore(
+            int(_number(config, "render_concurrency", 2, 1, 8))
+        )
+        self.image_mode = str(config.get("image_mode", "auto"))
+        self.timezone = str(config.get("timezone", "Asia/Shanghai"))
+        try:
+            ZoneInfo(self.timezone)
+        except (ZoneInfoNotFoundError, ValueError):
+            self.timezone = "Asia/Shanghai"
+        self._skin_tasks: dict[str, asyncio.Task] = {}
+        self._image_tasks: set[asyncio.Task] = set()
+        self._closed = False
+
+    async def session_image(
+        self,
+        uname: str,
+        data: UserSessionStats,
+        nph_stats: Mapping | None = None,
+        skin_id: str | None = None,
+        *,
+        hours: int = 24,
+    ) -> bytes | None:
+        return await self._image(
+            uname,
+            session_template_data(data, nph_stats, hours),
+            DEFAULT_TEMPLATE,
+            skin_id,
+        )
+
+    async def run_image(
+        self, uname: str, run: RunStats, skin_id: str | None = None
+    ) -> bytes | None:
+        return await self._image(
+            uname, run_template_data(run, self.timezone), "run", skin_id
+        )
+
+    async def _image(
+        self,
+        uname: str,
+        card_data: dict[str, Any],
+        template_name: str,
+        skin_id: str | None,
+    ) -> bytes | None:
+        if self._closed or self.image_mode == "text":
+            return None
+        request = asyncio.current_task()
+        if request is not None:
+            self._image_tasks.add(request)
+        acquired = False
+        state = {"skin": None}
+        started = asyncio.get_running_loop().time()
+        try:
+            await asyncio.wait_for(self.semaphore.acquire(), timeout=self.timeout)
+            acquired = True
             try:
-                render_output = await self.star.html_render(
-                    tmpl=tmpl,
-                    data=self.render_data,
-                    return_url=False,
-                    options=options,
+                remaining = max(
+                    0.001, self.timeout - (asyncio.get_running_loop().time() - started)
                 )
-                if (
-                    render_output
-                    and os.path.exists(render_output)
-                    and os.path.getsize(render_output) > 4096
-                ):
-                    return copy_render_output(render_output)
-            except Exception as e:
-                logger.error(f"渲染图片失败 (尝试次数: {attempt}): {e}")
-
-            if attempt < MAX_ATTEMPTS:
-                await asyncio.sleep(RETRY_DELAY)
-
-class RunRenderer:
-    def __init__(self, star_instance: Star, uname: str, run_stats: RunStats):
-        self._uname = uname
-        self.run = run_stats
-        self.star = star_instance
-        self.render_data = common_template_data(self._uname) | {
-            "times": {
-                "nether": self._format_time(self.run.nether),
-                "bastion": self._format_time(self.run.bastion),
-                "fortress": self._format_time(self.run.fortress),
-                "first_portal": self._format_time(self.run.first_portal),
-                "stronghold": self._format_time(self.run.stronghold),
-                "end": self._format_time(self.run.end),
-                "finish": self._format_time(self.run.finish),
-            },
-            "update_time": to_local_time(self.run.updatedTime),
-        }
-
-    def _format_time(self, milliseconds: int) -> str:
-        minutes, seconds = get_time(milliseconds)
-        return f"{minutes}:{seconds:02d}"
-
-    async def render_dynamic(self, template_name: str = "run"):
-        options = {"full_page": False, "type": "png", "scale": "device"}
-        tmpl = load_template(template_name)
-        self.render_data["skin_uri"] = await fetch_skin_data_uri(self._uname)
-
-        for attempt in range(1, MAX_ATTEMPTS + 1):
+                output = await asyncio.wait_for(
+                    self._prepare_image(
+                        uname, card_data, template_name, skin_id, state
+                    ),
+                    timeout=remaining,
+                )
+                if output is not None:
+                    return output
+            except (TimeoutError, asyncio.TimeoutError):
+                logger.info("图片渲染超过时间预算，使用本地绘图")
+            except Exception:
+                logger.exception("HTML 图片渲染失败，使用本地绘图")
             try:
-                render_output = await self.star.html_render(
-                    tmpl=tmpl,
-                    data=self.render_data,
-                    return_url=False,
-                    options=options,
+                return await asyncio.to_thread(
+                    _pil_image,
+                    uname,
+                    card_data,
+                    state["skin"],
+                    session=template_name == DEFAULT_TEMPLATE,
                 )
-                if (
-                    render_output
-                    and os.path.exists(render_output)
-                    and os.path.getsize(render_output) > 4096
-                ):
-                    return copy_render_output(render_output)
-            except Exception as e:
-                logger.error(f"渲染图片失败 (尝试次数: {attempt}): {e}")
+            except Exception:
+                logger.exception("本地图片渲染失败，使用文字回复")
+                return None
+        except (TimeoutError, asyncio.TimeoutError):
+            logger.info("图片渲染队列繁忙，使用文字回复")
+            return None
+        finally:
+            if acquired:
+                self.semaphore.release()
+            if request is not None:
+                self._image_tasks.discard(request)
 
-            if attempt < MAX_ATTEMPTS:
-                await asyncio.sleep(RETRY_DELAY)
+    async def _prepare_image(self, uname, card_data, template_name, skin_id, state):
+        state["skin"] = await self._skin(skin_id or uname)
+        if self.image_mode == "pil":
+            return None
+        template_data = await asyncio.to_thread(common_template_data, uname)
+        template_data.update(card_data)
+        if state["skin"]:
+            template_data["skin_uri"] = bytes_data_uri(
+                state["skin"], image_mime_type(state["skin"])
+            )
+        return await self._html(template_name, template_data)
+
+    async def _html(self, template_name: str, data: dict[str, Any]) -> bytes | None:
+        template = await asyncio.to_thread(load_template, template_name)
+        for attempt in range(self.attempts):
+            try:
+                output = await self.star.html_render(
+                    tmpl=template,
+                    data=data,
+                    return_url=False,
+                    options={
+                        "full_page": True,
+                        "type": "png",
+                        "scale": "css",
+                        "clip": {
+                            "x": 0,
+                            "y": 0,
+                            "width": CARD_SIZE[0],
+                            "height": CARD_SIZE[1],
+                        },
+                    },
+                )
+                if not output:
+                    return None
+                return await asyncio.to_thread(self._read_render_output, Path(output))
+            except Exception as error:
+                if attempt + 1 >= self.attempts or not _temporary_render_error(error):
+                    logger.warning(f"HTML 图片渲染失败: {error}")
+                    return None
+                await asyncio.sleep(0.3 * (attempt + 1))
+        return None
+
+    @staticmethod
+    def _read_render_output(path: Path) -> bytes:
+        with path.open("rb") as source:
+            content = source.read(MAX_IMAGE_BYTES + 1)
+        return validate_image(content, card=True)
+
+    async def _skin(self, identity: str) -> bytes | None:
+        key = hashlib.sha256(identity.lower().encode("utf-8")).hexdigest()
+        task = self._skin_tasks.get(key)
+        if task is None:
+            task = asyncio.create_task(self._load_skin(key, identity))
+            self._skin_tasks[key] = task
+            task.add_done_callback(
+                lambda finished: self._finish_skin_task(key, finished)
+            )
+        return await asyncio.shield(task)
+
+    def _finish_skin_task(self, key: str, task: asyncio.Task) -> None:
+        if self._skin_tasks.get(key) is task:
+            self._skin_tasks.pop(key, None)
+
+    async def _load_skin(self, key: str, identity: str) -> bytes | None:
+        path = self.skin_dir / f"{key}.png"
+        cached, fresh = await asyncio.to_thread(self._cached_skin, path)
+        if fresh:
+            return cached
+        try:
+            content = await asyncio.wait_for(
+                self.api.get_bytes(
+                    f"https://render.crafty.gg/3d/full/{quote(identity, safe='')}",
+                    timeout=self.skin_timeout,
+                ),
+                timeout=self.skin_timeout,
+            )
+            await asyncio.to_thread(validate_image, content)
+            await asyncio.to_thread(self._save_skin, path, content)
+            return content
+        except Exception as error:
+            logger.info(f"皮肤暂不可用，使用缓存或无皮肤卡片: {error}")
+            return cached
+
+    def _cached_skin(self, path: Path) -> tuple[bytes | None, bool]:
+        try:
+            modified = path.stat().st_mtime
+            with path.open("rb") as source:
+                content = validate_image(source.read(MAX_IMAGE_BYTES + 1))
+            return content, time.time() - modified < self.skin_ttl
+        except (OSError, ValueError, SyntaxError):
+            return None, False
+
+    def _save_skin(self, path: Path, content: bytes) -> None:
+        self.skin_dir.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary = tempfile.mkstemp(
+            dir=self.skin_dir, prefix="skin-", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(descriptor, "wb") as destination:
+                destination.write(content)
+            os.replace(temporary, path)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+        files = []
+        for cached in self.skin_dir.glob("*.png"):
+            try:
+                files.append((cached.stat().st_mtime, cached))
+            except FileNotFoundError:
+                continue
+        for _, cached in sorted(files)[: max(0, len(files) - self.skin_max_files)]:
+            cached.unlink(missing_ok=True)
+
+    async def aclose(self) -> None:
+        self._closed = True
+        current = asyncio.current_task()
+        tasks = (self._image_tasks | set(self._skin_tasks.values())) - {current}
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self._skin_tasks.clear()
