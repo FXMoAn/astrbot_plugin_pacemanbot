@@ -84,7 +84,7 @@ def _config(config) -> dict:
     return values
 
 
-@register("pacemanbot", "Mo_An", "查询 PaceMan 和 MCSR Ranked 速通数据", "1.6.0")
+@register("pacemanbot", "Mo_An", "查询 PaceMan 和 MCSR Ranked 速通数据", "1.6.1")
 class PaceManPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig | None = None):
         super().__init__(context)
@@ -114,23 +114,18 @@ class PaceManPlugin(Star):
 
     @filter.command("bothelp", alias={"pmhelp"})
     async def bothelp(self, event: AstrMessageEvent):
-        """查看 PaceMan／Ranked 命令、参数和示例；也可使用 /pmhelp。"""
+        """查看 PaceMan 和 Ranked 命令用法。"""
         yield event.plain_result(
             "PaceMan / MCSR Ranked 帮助\n"
-            "/register 用户名：绑定玩家，PaceMan 或 Ranked 能查到即可\n"
-            f"/paceman [用户名] [小时]：统计速通数据，默认{self.config['paceman_hours']}小时，范围1–168\n"
-            "/run [用户名]：查询最近一次完成的速通，缺失分段显示 —\n"
-            "/pb [用户名]：查询 PaceMan 个人最好成绩\n"
-            "/rank [用户名] [赛季]：查询排位成绩，省略赛季或填0查当前赛季\n"
-            "/recent [用户名] [条数]：最近排位比赛，默认5场，范围1–10\n"
-            f"/ldb [cn] [页码] [赛季]：全球／中国榜单，每页{self.config['leaderboard_page_size']}名，默认第1页和当前赛季\n"
+            "/register 用户名：绑定游戏账号\n"
+            f"/paceman [用户名] [小时]：PaceMan统计，默认{self.config['paceman_hours']}小时，范围1–168\n"
+            "/run [用户名]：最近一次完成的速通\n"
+            "/pb [用户名]：PaceMan个人最好成绩\n"
+            "/rank [用户名] [赛季]：Ranked赛季数据，省略赛季或填0查当前赛季\n"
+            "/recent [用户名] [条数]：最近排位，默认5场，范围1–10\n"
+            f"/ldb [cn] [页码] [赛季]：全球／中国榜单，默认当前赛季第1页，每页{self.config['leaderboard_page_size']}名\n"
             "省略用户名使用已绑定玩家；仅填数字时表示小时／赛季／条数。\n"
-            "示例：/paceman LEC666888 48；/rank LEC666888 11；/recent 5\n"
-            "榜单示例：/ldb 2；/ldb cn 2；/ldb cn 1 11\n"
-            "中国榜按玩家资料 country=cn 筛选；榜单序号与全球排名分别显示。\n"
-            "统计图片保留第一／第二结构对应猪堡／下要的显示口径。\n"
-            "数据有短期缓存；RNPH 来自追踪器统计，数据缺失会注明。\n"
-            "项目：https://github.com/FXMoAn/astrbot_plugin_pacemanbot"
+            "示例：/paceman 48；/rank LEC666888 11；/ldb cn 2"
         )
 
     async def _identity(self, name: str) -> dict:
@@ -226,7 +221,7 @@ class PaceManPlugin(Star):
 
     @filter.command("register")
     async def register(self, event: AstrMessageEvent, username: str = ""):
-        """/register 用户名：通过 PaceMan 或 Ranked 校验，保存玩家 UUID 与游戏名。"""
+        """/register 用户名：绑定游戏账号。"""
         try:
             if not username:
                 raise UserInputError("用法：/register 用户名")
@@ -238,7 +233,7 @@ class PaceManPlugin(Star):
 
     @filter.command("paceman")
     async def paceman(self, event: AstrMessageEvent, name: str = "", hours: str = ""):
-        """/paceman [用户名] [小时]：查询1–168小时统计，默认24小时。"""
+        """/paceman [用户名] [小时]：查询 PaceMan 统计。"""
         try:
             name, hours = self._optional_number(
                 name, hours, self.config["paceman_hours"], 1, 168, "小时数"
@@ -289,10 +284,10 @@ class PaceManPlugin(Star):
                 f"{label}数量：{stats.count if stats.count is not None else '—'}，平均时间：{stats.avg or '—'}"
             )
         if nph is None:
-            lines.append("RNPH：暂不可用")
+            lines.append("每小时下界数：暂不可用")
         else:
             lines.append(
-                f"RNPH：{nph.get('rnph') if nph.get('rnph') is not None else '—'}"
+                f"每小时下界数：{nph.get('rnph') if nph.get('rnph') is not None else '—'}"
             )
             lines.append(
                 f"追踪器累计刷种数：{nph.get('totalResets') if nph.get('totalResets') is not None else '—'}"
@@ -303,7 +298,7 @@ class PaceManPlugin(Star):
 
     @filter.command("run")
     async def run(self, event: AstrMessageEvent, name: str = ""):
-        """/run [用户名]：查询 PaceMan 最近一次完成记录，省略用户名查本人。"""
+        """/run [用户名]：查询最近一次完成的速通。"""
         try:
             player = await self._player(event, name)
             payload = await self.api.fetch(
@@ -350,7 +345,7 @@ class PaceManPlugin(Star):
 
     @filter.command("rank")
     async def rank(self, event: AstrMessageEvent, name: str = "", season: str = ""):
-        """/rank [用户名] [赛季]：查询排位数据；赛季0或省略表示当前赛季。"""
+        """/rank [用户名] [赛季]：查询 Ranked 赛季数据。"""
         try:
             name, season = self._optional_number(name, season, None, 0, 10000, "赛季")
             season = season or None
@@ -407,7 +402,7 @@ class PaceManPlugin(Star):
 
     @filter.command("recent")
     async def recent(self, event: AstrMessageEvent, name: str = "", count: str = ""):
-        """/recent [用户名] [条数]：查询最近1–10场排位，排除分数衰减记录。"""
+        """/recent [用户名] [条数]：查询最近排位比赛。"""
         try:
             name, count = self._optional_number(name, count, 5, 1, 10, "条数")
             player = await self._player(event, name)
@@ -435,7 +430,7 @@ class PaceManPlugin(Star):
 
     @filter.command("pb")
     async def pb(self, event: AstrMessageEvent, name: str = ""):
-        """/pb [用户名]：查询 PaceMan 个人最好成绩，省略用户名查本人。"""
+        """/pb [用户名]：查询 PaceMan 个人最好成绩。"""
         try:
             player = await self._player(event, name)
             records = await self.api.fetch(

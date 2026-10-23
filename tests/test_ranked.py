@@ -145,7 +145,7 @@ class RankedLeaderboardTests(unittest.TestCase):
         self.assertIn("全球 #120", result)
         self.assertIn("23. P22", result)
         self.assertNotIn("20. P19", result)
-        self.assertIn("country=cn", result)
+        self.assertNotIn("country=cn", result)
 
     def test_global_page_uses_configured_page_size(self):
         result = format_leaderboard(self.board, page=1, page_size=5)

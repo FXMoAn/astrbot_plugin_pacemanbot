@@ -223,6 +223,8 @@ class CommandTests(unittest.IsolatedAsyncioTestCase):
         help_text = (await self.command("bothelp"))[0].text
         for command in ["/pb", "/recent", "/ldb cn 2", "/rank", "1–168"]:
             self.assertIn(command, help_text)
+        for internal_note in ["country=cn", "第一／第二结构", "UUID", "追踪器", "缓存"]:
+            self.assertNotIn(internal_note, help_text)
 
     async def test_actual_astrbot_argument_parser(self):
         await self.command("register", "LEC666888")

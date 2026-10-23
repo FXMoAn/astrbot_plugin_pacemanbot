@@ -10,6 +10,11 @@
             src: url('{{ font_uri | safe }}') format('opentype');
         }
 
+        @font-face {
+            font-family: 'PaceManUIChinese';
+            src: url('{{ ui_font_uri | safe }}') format('opentype');
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -20,7 +25,7 @@
             width: 1280px;
             height: 720px;
             overflow: hidden;
-            font-family: 'Minecraft', monospace;
+            font-family: 'Minecraft', 'PaceManUIChinese', monospace;
             color: #fff;
             background: #111;
         }
@@ -192,7 +197,7 @@
             left: 64px;
             right: 64px;
             color: #fff0b0;
-            font-family: 'Minecraft', system-ui, sans-serif;
+            font-family: 'Minecraft', 'PaceManUIChinese', sans-serif;
             font-size: 16px;
             line-height: 20px;
             text-align: center;
@@ -210,11 +215,11 @@
                     <span class="stat-text">{{ stats.nether.count }} {{ stats.nether.avg }}</span>
                 </div>
                 <div class="stat-item">
-                    <img src="{{ icons.bastion | safe }}" alt="猪堡（第一结构）" class="stat-icon">
+                    <img src="{{ icons.bastion | safe }}" alt="猪堡" class="stat-icon">
                     <span class="stat-text">{{ stats.bastion.count }} {{ stats.bastion.avg }}</span>
                 </div>
                 <div class="stat-item">
-                    <img src="{{ icons.fortress | safe }}" alt="下要（第二结构）" class="stat-icon">
+                    <img src="{{ icons.fortress | safe }}" alt="下要" class="stat-icon">
                     <span class="stat-text">{{ stats.fortress.count }} {{ stats.fortress.avg }}</span>
                 </div>
                 <div class="stat-item">
@@ -247,11 +252,11 @@
 
             <div class="summary-panel">
                 <div class="summary-item">
-                    <div class="summary-label">每小时下界数 RNPH</div>
+                    <div class="summary-label">每小时下界数</div>
                     <div class="summary-value">{{ summary.rnph }}</div>
                 </div>
                 <div class="summary-item">
-                    <div class="summary-label">每次下界重置数 RPE</div>
+                    <div class="summary-label">每次下界重置数</div>
                     <div class="summary-value">{{ summary.rpe }}</div>
                 </div>
                 <div class="summary-item">

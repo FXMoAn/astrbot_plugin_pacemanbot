@@ -315,7 +315,9 @@ class ApiClient:
 
     @staticmethod
     def _body_error(value):
-        if isinstance(value, dict) and any(key in value for key in ("query", "params", "body")):
+        if isinstance(value, dict) and any(
+            key in value for key in ("query", "params", "body")
+        ):
             return ApiError("invalid_request")
         text = str(value or "").lower()
         if "unknown user" in text or "not found" in text or "does not exist" in text:

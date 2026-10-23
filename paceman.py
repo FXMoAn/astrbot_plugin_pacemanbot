@@ -149,6 +149,11 @@ def _font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(str(ASSETS_DIR / "1_Minecraft-Regular.otf"), size)
 
 
+@lru_cache(maxsize=8)
+def _ui_font(size: int) -> ImageFont.FreeTypeFont:
+    return ImageFont.truetype(str(ASSETS_DIR / "fonts" / "PaceManUIChinese.otf"), size)
+
+
 def _display(value: Any, *, precision: int = 2) -> str:
     if value is None:
         return "—"
@@ -179,6 +184,7 @@ def common_template_data(uname: str) -> dict[str, Any]:
     return {
         "uname": uname,
         "font_uri": asset_data_uri("1_Minecraft-Regular.otf", "font/otf"),
+        "ui_font_uri": asset_data_uri("fonts/PaceManUIChinese.otf", "font/otf"),
         "background_uri": asset_data_uri("background.webp", "image/webp"),
         "skin_uri": "",
         "icons": {key: asset_data_uri(f"{key}.webp", "image/webp") for key in SEGMENTS},
@@ -201,11 +207,11 @@ def session_template_data(
     nph = nph_stats if isinstance(nph_stats, Mapping) else {}
     warnings = []
     if data.truncated or nph.get("truncated"):
-        warnings.append("记录较多，统计数据可能不完整")
+        warnings.append("部分数据缺失")
     if not any(
         nph.get(key) is not None for key in ("rnph", "rpe", "resets", "totalResets")
     ):
-        warnings.append("NPH 数据暂不可用，— 表示缺失")
+        warnings.append("刷种效率暂不可用")
     return {
         "hours": hours,
         "title": f"最近{hours}小时统计",
@@ -259,9 +265,9 @@ def _pil_image(
     if session:
         draw.text(
             (1030, 90),
-            f"Last {card_data['hours']} hours",
+            card_data["title"],
             fill="white",
-            font=_font(18),
+            font=_ui_font(18),
             anchor="mt",
         )
     if skin:
@@ -274,38 +280,32 @@ def _pil_image(
     if session:
         draw.rectangle((62, 586, 1218, 690), fill=(10, 12, 16, 180))
         labels = (
-            ("RNPH", "rnph"),
-            ("RPE", "rpe"),
-            (f"{card_data['hours']}h resets", "resets"),
-            ("Tracker total", "total_resets"),
+            ("每小时下界数", "rnph"),
+            ("每次下界重置数", "rpe"),
+            (f"{card_data['hours']}小时刷种数", "resets"),
+            ("追踪器累计刷种数", "total_resets"),
         )
         for index, (label, key) in enumerate(labels):
             x = 88 + index * 287
-            draw.text((x, 598), label, fill="white", font=_font(18))
+            draw.text((x, 598), label, fill="white", font=_ui_font(18))
             value = card_data["summary"][key]
             value_size = 36 if len(value) <= 10 else 24
             draw.text((x, 630), value, fill="white", font=_font(value_size))
-        notices = []
-        if card_data["truncated"]:
-            notices.append("PARTIAL DATA")
-        if card_data["nph_missing"]:
-            notices.append("NPH UNAVAILABLE")
-        if notices:
+        if card_data["notice"]:
             draw.text(
-                (640, 699),
-                " / ".join(notices),
+                (640, 697),
+                card_data["notice"],
                 fill="#fff0b0",
-                font=_font(14),
+                font=_ui_font(16),
                 anchor="mt",
             )
     else:
-        # The bitmap fallback uses Latin labels when a CJK system font is unavailable.
         date = card_data["update_time"]
         draw.text(
             (640, 658),
-            date if date != "未知日期" else "Unknown date",
+            date,
             fill="white",
-            font=_font(26),
+            font=_font(26) if date != "未知日期" else _ui_font(26),
             anchor="mt",
         )
     output = io.BytesIO()

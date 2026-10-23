@@ -222,8 +222,6 @@ def format_leaderboard(
         rating = f"{elo} Elo" if elo is not None else "定级中"
         ranking = f"全球 #{global_rank}" if global_rank is not None else "暂无全球排名"
         lines.append(f"{position}. {user.nickname} — {rating}（{ranking}）")
-    if country:
-        lines.append("中国榜单按 Ranked 资料中的 country=cn 筛选。")
     return "\n".join(lines)
 
 
@@ -233,7 +231,7 @@ def format_recent(
     """Format recent real ranked games, including draws and placement matches."""
     user = _parse(RankedUser, profile)
     if not user.uuid:
-        raise RankedDataError("玩家资料缺少 UUID，无法识别最近比赛。")
+        raise RankedDataError("玩家资料不完整，暂时无法查询最近比赛。")
     if not isinstance(matches, list):
         raise RankedDataError("Ranked 比赛数据格式异常，请稍后重试。")
     if not 1 <= limit <= 10:
@@ -255,7 +253,7 @@ def format_recent(
             break
     if not records:
         return f"{user.nickname} 暂无近期排位比赛记录。"
-    lines = [f"{user.nickname} 最近 {len(records)} 场排位比赛（{timezone}）"]
+    lines = [f"{user.nickname} 最近 {len(records)} 场排位比赛"]
     for position, match in enumerate(records, start=1):
         opponents = [
             player.nickname

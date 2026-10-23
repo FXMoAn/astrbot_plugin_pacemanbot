@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import io
 import os
+import re
 import tempfile
 import time
 import unittest
@@ -84,7 +85,7 @@ class RenderDataTests(unittest.TestCase):
         self.assertEqual(data["hours"], 48)
         self.assertEqual(data["summary"]["rnph"], "—")
         self.assertTrue(data["nph_missing"])
-        self.assertIn("不完整", data["notice"])
+        self.assertIn("部分数据缺失", data["notice"])
         self.assertIn("暂不可用", data["notice"])
         self.assertEqual(data["stats"]["bastion"], {"count": "13", "avg": "4:35"})
         self.assertEqual(data["stats"]["fortress"], {"count": "7", "avg": "7:01"})
@@ -99,6 +100,65 @@ class RenderDataTests(unittest.TestCase):
             render.validate_image(complete[:32], card=True)
         with self.assertRaises(ValueError):
             render.validate_image(b"<!doctype html>", card=True)
+
+    def test_bundled_font_covers_current_chinese_ui_without_system_fonts(self):
+        plugin_dir = Path(render.__file__).resolve().parent
+        sources = (
+            plugin_dir / "paceman.py",
+            plugin_dir / "public" / "templates" / "pacestats.html",
+            plugin_dir / "public" / "templates" / "run.html",
+        )
+        characters = set(
+            re.findall(
+                r"[\u3400-\u9fff]",
+                "".join(source.read_text(encoding="utf-8") for source in sources),
+            )
+        )
+        font = render._ui_font(24)
+        missing = font.getmask("\U0010ffff")
+        missing_glyph = (missing.size, bytes(missing))
+        for character in characters:
+            with self.subTest(character=character):
+                glyph = font.getmask(character)
+                self.assertNotEqual(
+                    (glyph.size, bytes(glyph)),
+                    missing_glyph,
+                    "Rebuild public/fonts/PaceManUIChinese.otf after changing UI text",
+                )
+        template_data = render.common_template_data("PaceRunner")
+        self.assertTrue(
+            template_data["ui_font_uri"].startswith("data:font/otf;base64,")
+        )
+        for source in sources[1:]:
+            self.assertIn(
+                "'Minecraft', 'PaceManUIChinese'", source.read_text(encoding="utf-8")
+            )
+
+    def test_pil_fallback_labels_and_warnings_are_chinese(self):
+        texts = []
+        original = render.ImageDraw.ImageDraw.text
+
+        def capture(draw, xy, text, *args, **kwargs):
+            texts.append(text)
+            return original(draw, xy, text, *args, **kwargs)
+
+        with patch.object(render.ImageDraw.ImageDraw, "text", capture):
+            session = render.Paceman(
+                "PaceRunner", sample_stats(), hours=48
+            ).generate_image()
+            run = render.Run(render.RunStats(), "PaceRunner").generate_image()
+        self.assertIn("最近48小时统计", texts)
+        self.assertIn("追踪器累计刷种数", texts)
+        self.assertIn("每小时下界数", texts)
+        self.assertIn("每次下界重置数", texts)
+        self.assertIn("部分数据缺失 · 刷种效率暂不可用", texts)
+        self.assertIn("未知日期", texts)
+        self.assertFalse(
+            any(re.search("[A-Za-z]", text) for text in texts if text != "PaceRunner")
+        )
+        for content in (session, run):
+            with Image.open(io.BytesIO(content)) as image:
+                self.assertEqual(image.size, (1280, 720))
 
 
 class RenderServiceTests(unittest.IsolatedAsyncioTestCase):
